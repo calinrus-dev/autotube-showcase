@@ -18,6 +18,8 @@ Fecha: 3 de octubre de 2026. Entorno: Linux, motor Python 3.12, React 19, Tauri 
 
 - Rediseño 0.2: inventario desplegable y búsqueda; texto/toma en paralelo; guardado antes de cambiar de canal; importación de WAV decodificado con duración real; previsualizaciones cancelables y orden de idiomas estable.
 
+- Versión 0.2.1: tema rosa oscuro, icono actualizado y comprobación visual en escritorio y móvil.
+
 ## Pendiente de conexión o hardware
 
 - Consentimiento OAuth de la app y subida real a YouTube.

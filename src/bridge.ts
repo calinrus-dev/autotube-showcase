@@ -33,7 +33,7 @@ function seed(): Snapshot {
     jobs: [],
     settings: {},
     mode: "demo",
-    version: "0.1.0",
+    version: "0.2.1",
   };
 }
 function load(): Snapshot {
