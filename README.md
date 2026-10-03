@@ -8,16 +8,16 @@ Este repositorio público contiene la demo interactiva de la interfaz y document
 
 ## Diseño y flujo
 
-La consola 0.2 reúne canal y navegación arriba. El inventario se despliega con búsqueda, y Guion, Audio y Publicación tienen vistas propias. En escritorio, el texto de cada pista y su toma se editan en paralelo. El cambio de contexto con ediciones pendientes ofrece guardar, descartar o seguir trabajando.
+El editor 0.3 organiza Guion, Voz y tomas, Montaje, Publicación y Criterio. La cabecera es compacta, el inventario se despliega con búsqueda y cada herramienta muestra sus controles. Mantiene el tema rosa oscuro, con iconos y paneles que se adaptan a escritorio y móvil.
 
-- Inventario de episodios separado por canal.
-- Guion, descripción, etiquetas, fuentes y recursos del episodio.
-- Criterio heredado por canal y tono ajustable por proyecto.
-- Mesa de audio con una pista, guion y metadatos por idioma.
-- Calendario de inventario ordenado y conexiones de producción.
-- Interfaz oscura editorial, sin simular audios que todavía no existen.
+- Guion con escritura, lectura y versiones que se revisan antes de aplicar.
+- Historial de audios por idioma: filtros de muestras/completas, elección y descarte reversible.
+- Montaje con herramientas, visor y secuencia de intro, contenido y cierre.
+- Foto o vídeo en bucle como fondo, separado de la miniatura de YouTube.
+- Identidad y criterio por canal, con ajustes por episodio.
+- Inventario, calendario y preparación de publicación.
 
-La demo permite crear canales y episodios, editar/guardar y añadir idiomas. Los datos se guardan únicamente en `localStorage` del navegador. No importes datos sensibles ni claves en esta demo.
+La demo permite crear canales/episodios, editar y guardar, añadir idiomas e importar medios. Usa `localStorage`; la generación de texto/voz y la exportación corresponden a la aplicación privada. No importes datos sensibles ni claves en esta demo.
 
 ## Probar
 
@@ -34,12 +34,13 @@ npm run verify
 
 ## Implementación de escritorio
 
-La versión privada incluye SQLite, revisiones, cola serial, OAuth por canal, subida reanudable, calendario `publishAt`, miniaturas, FFmpeg, exportación de recursos y MCP stdio. Proveedores de voz preparados: ElevenLabs, Qwen3-TTS y Chatterbox.
+La versión privada incluye SQLite, revisiones, cola serial, OAuth por canal, subida reanudable, calendario `publishAt`, miniaturas, FFmpeg, exportación de recursos y MCP stdio. Generación de texto con Ollama; voz local con Qwen3-TTS y adaptadores opcionales de ElevenLabs/Chatterbox.
 
-La integración de YouTube se ha probado con HTTP simulado, el render con FFmpeg real y MCP con cliente stdio real. No se han subido vídeos a una cuenta real ni evaluado acústicamente los modelos locales en esta entrega. El audio alternativo de un mismo vídeo requiere carga manual en Studio. Un proyecto de API sin auditoría puede limitar las subidas a privado.
+La integración de YouTube se ha probado con HTTP simulado, el render con FFmpeg real y MCP con cliente stdio real. Se han generado texto y voz locales y exportado una secuencia real con el motor empaquetado. No se han subido vídeos a una cuenta real ni realizado una comparación acústica controlada. El audio alternativo de un mismo vídeo requiere carga manual en Studio. Un proyecto de API sin auditoría puede limitar las subidas a privado.
 
 ## Documentación seleccionada
 
+- [Editor local: guion, revisión y montaje](docs/EDITOR.md)
 - [Producto y límites](docs/PRODUCTO.md)
 - [Arquitectura](docs/ARQUITECTURA.md)
 - [Audio y alternativas locales](docs/AUDIO.md)

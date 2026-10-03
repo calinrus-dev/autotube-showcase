@@ -46,3 +46,13 @@ API enlazada únicamente a `127.0.0.1:47831`. Cada comando requiere un token loc
 Tokens OAuth y clave ElevenLabs viven en el llavero del sistema. Un llavero no disponible hace fallar la operación; no hay fallback a un JSON sin cifrar. Las URLs de sesión reanudable se guardan en SQLite para recuperarlas pero no aparecen en snapshots ni herramientas MCP. Los errores de red se sustituyen por mensajes sin credenciales ni URL de sesión.
 
 El MCP stdio es un puente local. Para clientes cloud hace falta una conexión desktop compatible o desplegar una variante remota autenticada. No se abre un túnel ni se expone la API local en esta entrega.
+
+## Producción local 0.3
+
+Las pistas incluyen `takes` con el texto y los parámetros de cada generación. `audio_id` representa únicamente la toma elegida. Se migran los audios anteriores como tomas completas, sin perder sus referencias. Descartar cambia el estado y conserva el archivo. Cambiar audio, imagen o tema invalida los renders asociados.
+
+El entorno Qwen y sus modelos tienen un lockfile separado, fuera del motor empaquetado. El worker ejecuta el Python configurado con pesos locales; expone progreso y adjunta la nueva toma con revisión compare-and-swap. La composición PIL alimenta tanto la previsualización como FFmpeg. El protocolo nativo solo admite la carpeta de assets; HTTP multimedia requiere el mismo token que los comandos.
+
+## Editor y generación de texto
+
+`text_ai.py` usa streaming de Ollama por loopback, sin proveedor remoto. El worker serial conserva borradores y resultados parciales en SQLite; aplicar un borrador pasa por el control de revisión habitual. `montage.py` normaliza intro/contenido/cierre y concatena MP4 compatibles. La cola captura el branding del canal al exportar, y cambiarlo se bloquea con trabajos activos e invalida los renders. Contratos y límites en [Editor](EDITOR.md).

@@ -1,6 +1,6 @@
 # Validación de la entrega
 
-Fecha: 3 de octubre de 2026. Entorno: Linux, motor Python 3.12, React 19, Tauri 2.
+Fecha: 4 de octubre de 2026. Entorno: Linux, motor Python 3.12, React 19, Tauri 2.
 
 ## Comprobado
 
@@ -25,8 +25,16 @@ Fecha: 3 de octubre de 2026. Entorno: Linux, motor Python 3.12, React 19, Tauri 
 - Consentimiento OAuth de la app y subida real a YouTube.
 - Programación efectiva después de procesamiento/auditoría y restricciones de la cuenta.
 - Generación facturable ElevenLabs.
-- Instalación y descarga de los modelos Qwen/Chatterbox, generación y comparación auditiva.
+- Instalación y validación de Chatterbox; comparación acústica controlada entre proveedores.
 - Clientes MCP externos concretos y cualquier conexión cloud.
 - Builds nativos macOS/Windows y prueba interactiva del escritorio empaquetado.
 
 La demo utiliza contenido ficticio y almacenamiento local de navegador. Los tests no borraron ni modificaron vídeos del canal del usuario.
+
+## Interfaz 0.3
+
+Vista de lectura, historial de tomas, recuperación de descartadas, elección de audio y mesa de vídeo. Las fuentes están incluidas. La demo permite importar y revisar medios; la síntesis local y el montaje corresponden a la aplicación privada. No se publica el inventario del usuario ni su configuración local.
+
+## Editor local y texto 0.3
+
+Build/Vitest de la demo aprobados. En la implementación privada pasan 18 pruebas Python y 3 Vitest. Se han verificado streaming de Ollama, detención sin sustituir el guion, versiones recuperables, aprobación de muestras, intro/cierre por canal y un bucle real que cubre la narración. El motor empaquetado genera texto y voz y exporta MP4; la comprobación interactiva nativa sigue pendiente. No se publican datos de producción ni configuración privada.

@@ -1,8 +1,17 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Snapshot, Project, Channel } from "./types";
 import { editorial, newProject } from "./types";
 export const desktop = isTauri();
+export const localEngine = desktop || import.meta.env.VITE_LOCAL_ENGINE === "1";
+export async function mediaPreview(assetId: string): Promise<string> {
+  if (desktop)
+    return convertFileSrc(
+      await command<string>("asset_path", { asset_id: assetId }),
+    );
+  if (localEngine) return "/engine/media/" + encodeURIComponent(assetId);
+  return command<string>("asset_preview", { asset_id: assetId });
+}
 const storageKey = "autotube-demo-v1";
 const mediaKey = "autotube-demo-media-v1";
 function seed(): Snapshot {
@@ -33,7 +42,7 @@ function seed(): Snapshot {
     jobs: [],
     settings: {},
     mode: "demo",
-    version: "0.2.1",
+    version: "0.3.0",
   };
 }
 function load(): Snapshot {
@@ -51,10 +60,42 @@ export async function command<T = unknown>(
   args: unknown = {},
 ): Promise<T> {
   if (desktop) return invoke<T>("engine_command", { operation, args });
+  if (localEngine) {
+    const response = await fetch("/engine/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-AutoTube-Local": "1" },
+      body: JSON.stringify({ operation, args }),
+    });
+    const result = await response.json();
+    if (!response.ok)
+      throw new Error(result.detail || "El motor local no responde");
+    return result as T;
+  }
   const state = load();
   const data = args as Record<string, unknown>;
   let result: unknown;
-  if (operation === "snapshot") return state as T;
+  if (operation === "snapshot") {
+    state.projects.forEach((p) => {
+      p.tracks.forEach((t) => {
+        t.takes ||= t.audio_id
+          ? [
+              {
+                id: t.audio_id,
+                script: t.script || p.script,
+                provider: t.provider,
+                voice: t.voice,
+                model: t.model || "",
+                created_at: "",
+                status: "ready",
+                sample: false,
+                duration: 0,
+              },
+            ]
+          : [];
+      });
+    });
+    return state as T;
+  }
   if (operation === "save_project") {
     const p = structuredClone(args) as Project;
     const old = state.projects.find((item) => item.id === p.id);
@@ -74,6 +115,22 @@ export async function command<T = unknown>(
     c.id ||= crypto.randomUUID();
     if (!c.name.trim()) throw new Error("Escribe un nombre de canal.");
     new Intl.DateTimeFormat("es", { timeZone: c.timezone });
+    const previous = state.channels.find((item) => item.id === c.id);
+    if (
+      previous &&
+      JSON.stringify(previous.branding || {}) !==
+        JSON.stringify(c.branding || {})
+    ) {
+      state.projects
+        .filter((p) => p.channel_id === c.id)
+        .forEach((p) => {
+          p.video_id = "";
+          p.tracks.forEach((t) => {
+            t.video_id = "";
+          });
+          p.revision++;
+        });
+    }
     state.channels = [...state.channels.filter((item) => item.id !== c.id), c];
     result = c;
   } else if (operation === "editorial_brief") {
@@ -93,6 +150,99 @@ export async function command<T = unknown>(
     result = JSON.parse(localStorage.getItem(mediaKey) || "{}")[
       String(data.asset_id)
     ];
+  } else if (operation === "record_take" || operation === "take_action") {
+    const p = state.projects.find((p) => p.id === data.project_id);
+    if (!p || p.revision !== data.revision)
+      throw new Error("El proyecto cambió; vuelve a cargar");
+    const t = p.tracks.find((t) => t.language === data.language)!;
+    t.takes ||= t.audio_id
+      ? [
+          {
+            id: t.audio_id,
+            script: t.script || p.script,
+            provider: t.provider,
+            voice: t.voice,
+            model: t.model || "",
+            created_at: "",
+            status: "ready",
+            sample: false,
+            duration: 0,
+          },
+        ]
+      : [];
+    if (operation === "record_take") {
+      t.takes.push({
+        id: String(data.asset_id),
+        script: t.script || p.script,
+        provider: "imported",
+        voice: "",
+        model: "",
+        created_at: new Date().toISOString(),
+        status: "ready",
+        sample: false,
+        duration: 0,
+      });
+    } else {
+      const take = t.takes.find((t) => t.id === data.take_id);
+      if (!take) throw new Error("Toma no encontrada");
+      if (data.action === "approve") {
+        if (!take.sample || take.status === "discarded")
+          throw new Error("Elige una muestra disponible");
+        t.preferred_sample_id = take.id;
+        t.model = take.model;
+        t.voice = take.voice;
+        t.provider = take.provider as typeof t.provider;
+      }
+      if (data.action === "use") {
+        if (take.sample || take.status === "discarded")
+          throw new Error("Elige una toma completa");
+        t.audio_id = take.id;
+      }
+      if (data.action === "discard") {
+        take.status = "discarded";
+        if (t.preferred_sample_id === take.id) t.preferred_sample_id = "";
+        if (t.audio_id === take.id) t.audio_id = "";
+      }
+      if (data.action === "restore") take.status = "ready";
+      t.video_id = "";
+      if (t.language === p.language) p.video_id = "";
+    }
+    p.revision++;
+    p.updated_at = new Date().toISOString();
+    result = p;
+  } else if (operation === "script_action") {
+    const p = state.projects.find((p) => p.id === data.project_id);
+    if (!p || p.revision !== data.revision)
+      throw new Error("El proyecto cambió; vuelve a cargar");
+    const draft = p.script_drafts?.find((d) => d.id === data.draft_id);
+    if (!draft) throw new Error("Versión de guion no encontrada");
+    if (data.action === "use") {
+      if (draft.status === "discarded")
+        throw new Error("Recupera la versión antes de usarla");
+      const track = p.tracks.find((t) => t.language === draft.language)!;
+      const before =
+        track.script || (draft.language === p.language ? p.script : "");
+      if (
+        before &&
+        !p.script_drafts?.some(
+          (d) => d.language === draft.language && d.text === before,
+        )
+      )
+        p.script_drafts?.push({
+          id: crypto.randomUUID(),
+          language: draft.language,
+          text: before,
+          model: "manual",
+          status: "ready",
+          created_at: new Date().toISOString(),
+        });
+      if (draft.language === p.language) {
+        p.script = draft.text;
+        track.script = "";
+      } else track.script = draft.text;
+    } else draft.status = data.action === "discard" ? "discarded" : "ready";
+    p.revision++;
+    result = p;
   } else if (operation === "settings") {
     if (data.elevenlabs_key)
       throw new Error(
@@ -138,16 +288,28 @@ export async function importMedia(
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return resolve(null);
-      if (file.size > 5 * 1024 * 1024) {
+      if (file.size > (localEngine ? 25 : 5) * 1024 * 1024) {
         return reject(
           new Error(
-            "La demo admite archivos de hasta 5 MiB. Usa el escritorio para archivos mayores.",
+            localEngine
+              ? "El navegador local admite archivos de hasta 25 MiB. Usa el escritorio para archivos mayores."
+              : "La demo admite archivos de hasta 5 MiB. Usa el escritorio para archivos mayores.",
           ),
         );
       }
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
+          if (localEngine) {
+            resolve(
+              await command("import_asset_data", {
+                name: file.name,
+                kind,
+                content: String(reader.result).split(",")[1],
+              }),
+            );
+            return;
+          }
           const state = load();
           const id = crypto.randomUUID();
           const media = JSON.parse(localStorage.getItem(mediaKey) || "{}");

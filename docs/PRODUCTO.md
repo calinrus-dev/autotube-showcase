@@ -8,17 +8,25 @@ Canal → proyecto/episodio → guion y recursos → pistas por idioma → monta
 
 El nombre del canal, su audiencia, propósito, tono, evidencia y lenguaje visual no dependen del diseño de la aplicación. Un proyecto conserva sus excepciones al criterio del canal. El MCP devuelve ambos perfiles y el resultado efectivo.
 
+El flujo vigente de guion local, revisión de muestras y montaje está descrito en [Editor local](EDITOR.md).
+
 ## Distribución de la consola
 
-La cabecera reúne canal, navegación y estado del motor. El selector de episodio y un inventario desplegable con búsqueda sustituyen las columnas laterales permanentes. Guion, Audio y Publicación son espacios separados: cada fase enseña las herramientas que necesita.
+La cabecera reúne canal, navegación y estado del motor. El selector de episodio y un inventario desplegable con búsqueda sustituyen las columnas laterales permanentes. Guion, Audio, Vídeo y Publicación son espacios separados: cada fase enseña las herramientas que necesita.
 
 La mesa de audio coloca texto y toma en paralelo en escritorio, y se adapta a una columna en pantallas pequeñas. Guarda con el botón o Ctrl/Cmd+S. Si cambias de canal o episodio con trabajo pendiente, un diálogo permite guardar y cambiar, descartar o continuar editando.
 
 ## Mesa de audio
 
-La interfaz trata cada idioma como una pista de producción, con guion, toma, motor y metadatos localizados. Se puede escuchar el archivo real importado o generado. Un audio inexistente se representa como vacío, sin ondas o reproducciones ficticias.
+La interfaz trata cada idioma como una pista de producción, con guion, historial de tomas, motor y metadatos localizados. Se puede escuchar el archivo real importado o generado. Un audio inexistente se representa como vacío, sin ondas o reproducciones ficticias.
 
 La generación de voz entra en una cola persistente. La revisión del texto y la toma sigue siendo parte del flujo: no hay traducción automática ni un supuesto control de calidad acústico. ElevenLabs usa el modelo multilingüe v2; otros modelos pueden solicitarse desde MCP. Qwen usa instrucciones para diseñar la voz y Chatterbox ofrece narración multilingüe.
+
+## Lectura y vídeo
+
+El guion tiene un editor y una vista de lectura con tiempo aproximado de narración. La mesa de audio conserva cada generación: puedes escucharla, leer el texto usado, descartarla de forma reversible y elegir una toma completa. Las muestras no sustituyen el audio del vídeo.
+
+Vídeo permite escoger composición, paleta, título, subtítulo y orientación. Su previsualización usa la misma composición local que el montaje de FFmpeg. Cambiar tema, imagen o toma elegida invalida el render anterior. El MP4 final se reproduce dentro de la app.
 
 ## Calendario
 
@@ -26,14 +34,14 @@ Selecciona episodios renderizados, en orden, una fecha inicial, una hora y una z
 
 ## Límites explícitos
 
-- Montaje inicial de imagen fija, no generación autónoma de escenas o B-roll.
+- Montaje de foto/título o vídeo en bucle con intro y cierre; no generación autónoma de escenas o B-roll.
 - Recursos y jobs locales; no sincronización de inventario entre ordenadores.
 - Un worker serial, no granja paralela ni servicio permanente.
 - Lista remota de títulos/IDs hasta 1000 vídeos; no borrado remoto ni editor de vídeos ya publicados.
 - Edición de guiones y metadatos locales antes de subir; no sustitución del archivo de un vídeo publicado.
 - Audio alternativo de un mismo vídeo: exportación y carga manual en Studio. La API pública documentada no ofrece una carga equivalente en esta implementación.
-- La aplicación no ejecuta un LLM interno. El cliente MCP produce y revisa los textos con el contexto del proyecto.
-- OAuth, ElevenLabs y modelos locales requieren configuración. No se incluye una cuenta, clave ni licencia de voz.
+- Generación de texto con Ollama y modelos locales descargados. El cliente MCP puede producir y revisar también los textos con el contexto del proyecto.
+- OAuth y ElevenLabs requieren configuración. Qwen necesita preparación inicial; después genera con los pesos locales. No se incluye una cuenta o clave comercial.
 - Una app de YouTube sin auditoría puede quedar limitada a subidas privadas.
 
 ## Próximas mejoras

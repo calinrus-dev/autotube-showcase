@@ -14,23 +14,65 @@ export interface Channel {
   languages: string[];
   timezone: string;
   editorial: Editorial;
+  branding?: ChannelBranding;
+}
+export interface ChannelBranding {
+  intro_id: string;
+  outro_id: string;
 }
 export interface Track {
   language: string;
   script: string;
   audio_id: string;
+  preferred_sample_id?: string;
   video_id?: string;
   voice: string;
   provider: "elevenlabs" | "qwen3" | "chatterbox" | "imported";
   title: string;
   description: string;
+  model?: string;
+  takes?: AudioTake[];
 }
+export interface AudioTake {
+  id: string;
+  script: string;
+  provider: string;
+  voice: string;
+  model: string;
+  instruction?: string;
+  created_at: string;
+  status: "ready" | "discarded";
+  sample: boolean;
+  duration: number;
+  generation_seconds?: number;
+}
+export interface VideoTheme {
+  layout: "editorial" | "image" | "title" | "video";
+  palette: "rose" | "violet" | "mint";
+  format: "landscape" | "vertical";
+  heading: string;
+  subtitle: string;
+  background_id: string;
+  intro_enabled: boolean;
+  outro_enabled: boolean;
+}
+export const defaultTheme: VideoTheme = {
+  layout: "editorial",
+  palette: "rose",
+  format: "landscape",
+  heading: "",
+  subtitle: "",
+  background_id: "",
+  intro_enabled: true,
+  outro_enabled: true,
+};
 export interface Project {
   id: string;
   channel_id: string;
   title: string;
   description: string;
   script: string;
+  script_drafts?: ScriptDraft[];
   language: string;
   tags: string[];
   sources: string[];
@@ -38,11 +80,21 @@ export interface Project {
   tracks: Track[];
   thumbnail_id: string;
   video_id: string;
+  video_theme?: VideoTheme;
   category_id: string;
   made_for_kids: boolean;
   synthetic_media: boolean;
   revision: number;
   updated_at: string;
+}
+export interface ScriptDraft {
+  id: string;
+  language: string;
+  text: string;
+  model: string;
+  prompt?: string;
+  created_at: string;
+  status: "ready" | "discarded";
 }
 export interface Asset {
   id: string;
@@ -58,8 +110,23 @@ export interface Job {
   state: string;
   progress: number;
   error: string;
-  payload: { project: Project; publish_at?: string };
-  result: { url?: string; thumbnail?: string };
+  created_at?: string;
+  payload: {
+    project: Project;
+    publish_at?: string;
+    request?: { sample?: boolean };
+  };
+  result: {
+    url?: string;
+    thumbnail?: string;
+    text?: string;
+    phase?: string;
+    tokens?: number;
+    fragments?: number;
+    max_tokens?: number;
+    truncated?: boolean;
+    cancel_requested?: boolean;
+  };
 }
 export interface Snapshot {
   channels: Channel[];
@@ -69,6 +136,13 @@ export interface Snapshot {
   settings: Record<string, string>;
   mode: string;
   version: string;
+  local_voice?: {
+    python_ready: boolean;
+    models: Record<string, boolean>;
+    device: string;
+    offline: boolean;
+  };
+  local_text?: { running: boolean; installed: boolean; models: string[] };
 }
 export const editorial: Editorial = {
   purpose:
@@ -100,7 +174,9 @@ export function newTrack(language: string): Track {
     script: "",
     audio_id: "",
     voice: "",
-    provider: "imported",
+    provider: "qwen3",
+    model: "voice_design",
+    takes: [],
     title: "",
     description: "",
   };
@@ -119,6 +195,7 @@ export function newProject(channel_id: string): Project {
     tracks: [newTrack("es")],
     thumbnail_id: "",
     video_id: "",
+    video_theme: { ...defaultTheme },
     category_id: "27",
     made_for_kids: false,
     synthetic_media: false,

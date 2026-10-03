@@ -60,3 +60,17 @@ codex mcp get autotube
 6. Monta y exporta. La subida y el calendario producen acciones reales; respeta el alcance autorizado del cliente.
 
 El servidor ofrece capacidad técnica; no decide por sí solo cuándo la autorización del usuario es suficiente. No incluye herramientas de borrado remoto ni lectura de credenciales.
+
+## Revisión de tomas y modelos locales (0.3)
+
+`local_voice_status` comprueba entorno, pesos y dispositivo sin generar. `generate_voice` admite `sample=true` y los modelos Qwen `voice_design` y `custom_voice_small`. Cada trabajo añade una toma al historial; no la selecciona.
+
+`record_audio_take` añade un recurso importado a una pista. `review_take` acepta `use`, `discard` o `restore`, con la revisión actual del proyecto. Descarta de forma reversible; las muestras no se usan para montar. `save_project` configura `video_theme` (`layout`, `palette`, `format`, `heading`, `subtitle`). `render_video` utiliza la toma completa elegida y el tema; no necesita imagen si la composición es tipográfica.
+
+Los clientes deben recargar el inventario tras completar un trabajo para usar la revisión más reciente. La aplicación anterior debe cerrarse antes de abrir una versión nueva del motor.
+
+## Texto y montaje local 0.3
+
+`generate_script` crea propuestas con Ollama; `review_script` las usa, descarta o recupera. `local_text_status` lista los modelos descargados. Los resultados parciales se leen en `inventory().jobs[].result`, sin sustituir el guion actual.
+
+`save_channel` permite `branding.intro_id` y `branding.outro_id`. `save_project` configura `video_theme.background_id`, `layout=video` para bucle y `intro_enabled/outro_enabled`. `render_video` monta estos clips con la narración. `review_take(action="approve")` aprueba una muestra para recuperar sus ajustes; `use` sigue reservado a tomas completas. Consulta el contrato en [Editor](EDITOR.md).

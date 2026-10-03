@@ -15,22 +15,38 @@ import {
   RefreshCw,
   Save,
   Settings2,
+  SlidersHorizontal,
   Upload,
   X,
 } from "lucide-react";
-import { command, desktop, importMedia, choosePath } from "./bridge";
-import { editorial, labels, newProject, newTrack } from "./types";
+import {
+  command,
+  localEngine,
+  importMedia,
+  choosePath,
+  mediaPreview,
+} from "./bridge";
+import TakeReview from "./TakeReview";
+import VideoStage from "./VideoStage";
+import ChannelBranding from "./ChannelBranding";
+import ScriptWorkbench from "./ScriptWorkbench";
+import { defaultTheme, editorial, labels, newProject, newTrack } from "./types";
 import type { Channel, Editorial, Project, Snapshot, Track } from "./types";
 
 export default function App() {
   const [state, setState] = useState<Snapshot>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [channelId, setChannelId] = useState("");
   const [project, setProject] = useState<Project>();
   const [dirty, setDirty] = useState(false);
   const [page, setPage] = useState("studio");
-  const [tab, setTab] = useState("audio");
+  const [tab, setTab] = useState("script");
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
   const [pendingChange, setPendingChange] = useState<{
@@ -41,7 +57,7 @@ export default function App() {
   const [newLanguage, setNewLanguage] = useState("en");
   const [addingLanguage, setAddingLanguage] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [audio, setAudio] = useState("");
+  const [readingScript, setReadingScript] = useState(false);
   const [image, setImage] = useState("");
   const [channelDraft, setChannelDraft] = useState<Channel>();
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -62,8 +78,8 @@ export default function App() {
       .catch((e) => setError(String(e)));
   }, []);
   useEffect(() => {
-    if (!desktop) return;
-    const timer = setInterval(() => refresh().catch(() => {}), 5000);
+    if (!localEngine) return;
+    const timer = setInterval(() => refresh().catch(() => {}), 1500);
     return () => clearInterval(timer);
   }, []);
   const channel = state?.channels.find((c) => c.id === channelId);
@@ -81,24 +97,9 @@ export default function App() {
   const track = project?.tracks.find((t) => t.language === language);
   useEffect(() => {
     let active = true;
-    setAudio("");
-    if (track?.audio_id)
-      command<string>("asset_preview", { asset_id: track.audio_id })
-        .then((value) => {
-          if (active) setAudio(value);
-        })
-        .catch((e) => {
-          if (active) setError(String(e));
-        });
-    return () => {
-      active = false;
-    };
-  }, [track?.audio_id]);
-  useEffect(() => {
-    let active = true;
     setImage("");
     if (project?.thumbnail_id)
-      command<string>("asset_preview", { asset_id: project.thumbnail_id })
+      mediaPreview(project.thumbnail_id)
         .then((value) => {
           if (active) setImage(value);
         })
@@ -142,6 +143,25 @@ export default function App() {
     }
   }
   function edit(patch: Partial<Project>) {
+    if (
+      state?.jobs.some(
+        (j) =>
+          j.project_id === project?.id &&
+          ["queued", "running", "needs_review"].includes(j.state),
+      )
+    ) {
+      setNotice(
+        "La toma o el montaje están en curso. Puedes escuchar y leer; espera a que terminen para editar.",
+      );
+      return;
+    }
+    if ("video_theme" in patch || "thumbnail_id" in patch) {
+      patch.video_id = "";
+      patch.tracks = (patch.tracks || project?.tracks || []).map((t) => ({
+        ...t,
+        video_id: "",
+      }));
+    }
     setProject((p) => (p ? { ...p, ...patch } : p));
     setDirty(true);
   }
@@ -181,7 +201,7 @@ export default function App() {
     setDirty(false);
     return saved;
   }
-  async function production(operation: string) {
+  async function production(operation: string, sample = false) {
     await run(async () => {
       const saved = dirty ? await saveProject() : project;
       if (!saved) return;
@@ -194,11 +214,17 @@ export default function App() {
         instruction: [
           resolved.narrator,
           resolved.tone,
-          track?.provider === "qwen3" ? track?.voice : "",
+          track?.provider !== "elevenlabs" && track?.provider !== "chatterbox"
+            ? track?.voice
+            : "",
         ]
           .filter(Boolean)
           .join(" "),
-        model: "eleven_multilingual_v2",
+        model:
+          track?.provider === "elevenlabs"
+            ? "eleven_multilingual_v2"
+            : track?.model || "voice_design",
+        sample,
       });
     }, "Trabajo añadido a la cola");
   }
@@ -221,6 +247,57 @@ export default function App() {
   } as Editorial;
   const activeJobs =
     state?.jobs.filter((j) => j.project_id === project?.id) || [];
+  const productionPending = activeJobs.some((j) =>
+    ["queued", "running", "needs_review"].includes(j.state),
+  );
+  const voiceJob = activeJobs.find(
+    (j) => j.kind === "voice" && ["queued", "running"].includes(j.state),
+  );
+  const latestVoice = activeJobs.find((j) => j.kind === "voice");
+  const renderJob = activeJobs.find(
+    (j) => j.kind === "render" && ["queued", "running"].includes(j.state),
+  );
+  const effectiveScript =
+    track?.script ||
+    (language === project?.language ? project?.script || "" : "");
+  async function takeAction(takeId: string, action: string) {
+    await run(
+      async () => {
+        const saved = dirty ? await saveProject() : project;
+        if (!saved) return;
+        const updated = await command<Project>("take_action", {
+          project_id: saved.id,
+          revision: saved.revision,
+          language,
+          take_id: takeId,
+          action,
+        });
+        setProject(updated);
+        setDirty(false);
+      },
+      action === "approve"
+        ? "Voz aprobada; sus ajustes se usarán al generar la toma completa"
+        : action === "use"
+          ? "Toma elegida para el vídeo"
+          : action === "discard"
+            ? "Toma descartada; puedes recuperarla en el historial"
+            : "Toma recuperada",
+    );
+  }
+  async function importTake() {
+    const a = await importMedia("audio");
+    if (!a) return "No se seleccionó audio";
+    const saved = dirty ? await saveProject() : project;
+    if (!saved) return;
+    const updated = await command<Project>("record_take", {
+      project_id: saved.id,
+      revision: saved.revision,
+      language,
+      asset_id: a.id,
+    });
+    setProject(updated);
+    setDirty(false);
+  }
   const nameOf = (id: string) =>
     state?.assets.find((a) => a.id === id)?.name || "Sin archivo";
   if (!state)
@@ -262,10 +339,10 @@ export default function App() {
         </div>
         <nav aria-label="Navegación principal">
           {[
-            ["studio", "Mesa de producción", Clapperboard],
-            ["calendar", "Calendario", CalendarDays],
-            ["channels", "Canales y criterio", Radio],
-            ["settings", "Conexiones", Settings2],
+            ["studio", "Editor", Clapperboard],
+            ["calendar", "Publicaciones", CalendarDays],
+            ["channels", "Canales", Radio],
+            ["settings", "Motores y cuentas", Settings2],
           ].map(([id, label, Icon]) => {
             const I = Icon as typeof Radio;
             return (
@@ -282,7 +359,7 @@ export default function App() {
         </nav>
         <span className="engine-status">
           <i />
-          {desktop ? "Motor local" : "Demo local"}
+          {localEngine ? "Motor local" : "Demo local"}
         </span>
       </header>
       {pendingChange && (
@@ -339,7 +416,7 @@ export default function App() {
         </div>
       )}
       <main className="main">
-        {!desktop && (
+        {!localEngine && (
           <div className="demo-banner">
             <CircleHelp size={15} />
             <span>
@@ -355,12 +432,12 @@ export default function App() {
             </span>
             <h1>
               {page === "studio"
-                ? "Mesa de producción"
+                ? "Editor de episodios"
                 : page === "calendar"
                   ? "Ritmo de publicación"
                   : page === "channels"
-                    ? "La voz de cada canal"
-                    : "Conecta tu producción"}
+                    ? "Identidad y criterio del canal"
+                    : "Motores locales y cuentas"}
             </h1>
           </div>
           <button
@@ -487,6 +564,7 @@ export default function App() {
             )}
             {project ? (
               <section className="workspace">
+                <h1 className="sr-only">Editor: {project.title}</h1>
                 <div className="project-heading">
                   <span className="eyebrow">
                     EPISODIO / REV. {project.revision}{" "}
@@ -553,71 +631,136 @@ export default function App() {
                   aria-label="Edición del episodio"
                 >
                   {[
-                    ["script", "01 · Guion"],
-                    ["audio", "02 · Audio"],
-                    ["metadata", "03 · Publicación"],
-                    ["brief", "Criterio del proyecto"],
-                  ].map(([id, text]) => (
-                    <button
-                      role="tab"
-                      aria-selected={tab === id}
-                      key={id}
-                      className={tab === id ? "current" : ""}
-                      onClick={() => setTab(id)}
-                    >
-                      {text}
-                    </button>
-                  ))}
-                </div>
-                {tab === "script" && (
-                  <div className="script-workbench">
-                    <div className="script-area">
-                      <div className="editor-meta">
-                        <span>HABLA DIRECTO. SOSTÉN LO QUE DICES.</span>
-                        <span>
-                          {
-                            project.script.trim().split(/\s+/).filter(Boolean)
-                              .length
-                          }{" "}
-                          palabras
-                        </span>
-                      </div>
-                      <textarea
-                        aria-label="Guion principal"
-                        placeholder="Pega o escribe aquí el guion…"
-                        value={project.script}
-                        onChange={(e) => edit({ script: e.target.value })}
-                      />
-                      <div className="tone-chip">
-                        <Mic2 size={16} />
-                        <p>{resolved.tone}</p>
-                      </div>
-                    </div>
-                    <aside className="script-companion">
-                      <span className="eyebrow">CRITERIO EN ESTA SESIÓN</span>
-                      <h2>Claridad antes de narrar.</h2>
-                      <p>{resolved.tone}</p>
-                      <div className="evidence-box">
-                        <strong>
-                          {project.sources.filter(Boolean).length} fuentes
-                          añadidas
-                        </strong>
-                        <p>
-                          Una referencia añadida todavía requiere revisión.
-                          Separa evidencia, hipótesis e interpretación.
-                        </p>
-                      </div>
-                      <button onClick={() => setTab("brief")}>
-                        Afinar criterio <ChevronRight size={15} />
-                      </button>
+                    ["script", "Guion", FileText],
+                    ["audio", "Voz y tomas", AudioLines],
+                    ["video", "Montaje", Clapperboard],
+                    ["metadata", "Publicación", Upload],
+                    ["brief", "Criterio", SlidersHorizontal],
+                  ].map(([id, text, Icon]) => {
+                    const ToolIcon = Icon as typeof FileText;
+                    return (
                       <button
-                        className="primary"
-                        onClick={() => setTab("audio")}
+                        role="tab"
+                        aria-selected={tab === id}
+                        key={String(id)}
+                        className={tab === id ? "current" : ""}
+                        onClick={() => setTab(String(id))}
                       >
-                        Pasar a la mesa de audio <ChevronRight size={15} />
+                        <ToolIcon size={16} />
+                        {String(text)}
                       </button>
-                    </aside>
-                  </div>
+                    );
+                  })}
+                </div>
+                {tab === "video" && (
+                  <VideoStage
+                    project={project}
+                    track={track}
+                    channel={channel}
+                    assets={state.assets}
+                    busy={busy || productionPending}
+                    rendering={renderJob?.progress}
+                    onEdit={(video_theme) => edit({ video_theme })}
+                    onBackground={(kind) =>
+                      run(async () => {
+                        const a = await importMedia(kind);
+                        if (a)
+                          edit({
+                            video_theme: {
+                              ...defaultTheme,
+                              ...project.video_theme,
+                              background_id: a.id,
+                              layout: kind === "video" ? "video" : "image",
+                            },
+                          });
+                      }, "Fondo añadido; guarda el episodio")
+                    }
+                    onBranding={(branding) =>
+                      run(async () => {
+                        if (dirty) await saveProject();
+                        if (channel)
+                          await command("save_channel", {
+                            ...channel,
+                            branding,
+                          });
+                      }, "Identidad del canal guardada")
+                    }
+                    onAudio={() => setTab("audio")}
+                    onRender={() => production("render_video")}
+                    onImport={() =>
+                      run(async () => {
+                        const a = await importMedia("video");
+                        if (a) {
+                          if (language === project.language)
+                            edit({ video_id: a.id });
+                          else editTrack({ video_id: a.id });
+                        }
+                      }, "Vídeo importado; guarda el episodio")
+                    }
+                  />
+                )}
+                {tab === "script" && (
+                  <ScriptWorkbench
+                    project={project}
+                    channel={channel}
+                    track={track}
+                    language={language}
+                    jobs={activeJobs}
+                    busy={busy || productionPending}
+                    text={effectiveScript}
+                    reading={readingScript}
+                    onReading={setReadingScript}
+                    onLanguage={setLanguage}
+                    textStatus={state.local_text}
+                    onText={(text) =>
+                      language === project.language && !track?.script
+                        ? edit({ script: text })
+                        : editTrack({ script: text })
+                    }
+                    onGenerate={(args) =>
+                      run(async () => {
+                        const saved = dirty ? await saveProject() : project;
+                        await command("generate_script", {
+                          ...args,
+                          project_id: saved!.id,
+                          language,
+                        });
+                      }, "Generación local en cola")
+                    }
+                    onDraft={(id, action) =>
+                      run(
+                        async () => {
+                          const saved = dirty ? await saveProject() : project;
+                          const updated = await command<Project>(
+                            "script_action",
+                            {
+                              project_id: saved!.id,
+                              revision: saved!.revision,
+                              draft_id: id,
+                              action,
+                            },
+                          );
+                          setProject(updated);
+                          setDirty(false);
+                        },
+                        action === "use"
+                          ? "Versión elegida como guion"
+                          : "Versión actualizada",
+                      )
+                    }
+                    onStop={(jobId) =>
+                      run(
+                        () =>
+                          command("job_action", {
+                            job_id: jobId,
+                            action: "stop",
+                          }),
+                        "Se está deteniendo la generación",
+                      )
+                    }
+                    onAudio={() => setTab("audio")}
+                    onCriterion={() => setTab("brief")}
+                  />
                 )}
                 {tab === "metadata" && (
                   <div className="form-grid">
@@ -714,7 +857,7 @@ export default function App() {
                     </label>
                     <button
                       className="primary"
-                      disabled={busy || !desktop || !project.video_id}
+                      disabled={busy || !localEngine || !project.video_id}
                       onClick={() => production("queue_upload")}
                     >
                       <Upload size={16} />
@@ -772,7 +915,11 @@ export default function App() {
                         >
                           <span>{t.language.toUpperCase()}</span>
                           <small>
-                            {t.audio_id ? "Audio listo" : "Sin audio"}
+                            {t.audio_id
+                              ? "Elegida"
+                              : t.takes?.some((t) => t.status === "ready")
+                                ? "Por revisar"
+                                : "Sin audio"}
                           </small>
                         </button>
                       ))}
@@ -890,72 +1037,73 @@ export default function App() {
                           </span>
                           <button
                             className="subtle"
-                            onClick={() => setTab("script")}
+                            onClick={() => {
+                              setTab("script");
+                              setReadingScript(true);
+                            }}
                           >
-                            Abrir guion principal <ChevronRight size={14} />
+                            Leer este guion <ChevronRight size={14} />
                           </button>
-                        </div>
-                      </section>
-                      <section className="recording-console">
-                        <div className="panel-header">
-                          <span className="eyebrow">
-                            TOMA / {language.toUpperCase()}
-                          </span>
-                          <span
-                            className={audio ? "ready-label" : "empty-label"}
-                          >
-                            {audio ? "Lista para escuchar" : "Sin toma"}
-                          </span>
-                        </div>
-                        <div className="audio-monitor">
-                          {audio ? (
-                            <>
-                              <AudioLines size={40} />
-                              <h3>Escucha, revisa, decide.</h3>
-                              <audio
-                                aria-label={"Escuchar pista " + language}
-                                controls
-                                src={audio}
-                              />
-                            </>
-                          ) : (
-                            <>
-                              <div className="empty-record">
-                                <Mic2 size={30} />
-                              </div>
-                              <h3>Haz que el texto tenga voz.</h3>
-                              <p>
-                                Importa tu audio o elige un motor
-                                <br />
-                                para generar la primera toma.
-                              </p>
-                            </>
-                          )}
-                          <span className="file-caption">
-                            {nameOf(track?.audio_id || "")}
-                          </span>
                         </div>
                         <div className="voice-controls">
                           <label>
                             Motor de voz
                             <select
-                              value={track?.provider || "imported"}
+                              value={
+                                track?.provider === "imported"
+                                  ? "qwen3"
+                                  : track?.provider || "qwen3"
+                              }
                               onChange={(e) =>
                                 editTrack({
                                   provider: e.target.value as Track["provider"],
                                 })
                               }
                             >
-                              <option value="imported">Audio importado</option>
-                              <option value="elevenlabs">ElevenLabs</option>
                               <option value="qwen3">Qwen3-TTS · local</option>
-                              <option value="chatterbox">
+                              <option value="elevenlabs">
+                                ElevenLabs · servicio externo
+                              </option>
+                              <option
+                                value="chatterbox"
+                                disabled={!settings.chatterbox_python}
+                              >
                                 Chatterbox · local
                               </option>
                             </select>
                           </label>
+                          {track?.provider !== "elevenlabs" &&
+                            track?.provider !== "chatterbox" && (
+                              <label>
+                                Modelo local
+                                <select
+                                  value={track?.model || "voice_design"}
+                                  onChange={(e) =>
+                                    editTrack({ model: e.target.value })
+                                  }
+                                >
+                                  <option value="voice_design">
+                                    Diseño de voz · 1.7B
+                                  </option>
+                                  <option value="custom_voice_small">
+                                    Ligero · 0.6B · voz Ryan
+                                  </option>
+                                </select>
+                                <small>
+                                  {state.local_voice?.models[
+                                    track?.model || "voice_design"
+                                  ]
+                                    ? "Descargado · generación sin Internet"
+                                    : localEngine
+                                      ? "Modelo pendiente de preparar en Conexiones"
+                                      : "Disponible en la aplicación local"}
+                                </small>
+                              </label>
+                            )}
                           {(track?.provider === "elevenlabs" ||
-                            track?.provider === "qwen3") && (
+                            (track?.provider !== "chatterbox" &&
+                              (track?.model || "voice_design") ===
+                                "voice_design")) && (
                             <label>
                               {track?.provider === "elevenlabs"
                                 ? "ID de voz ElevenLabs"
@@ -976,25 +1124,23 @@ export default function App() {
                           <div className="button-row">
                             <button
                               onClick={() =>
-                                run(async () => {
-                                  const a = await importMedia("audio");
-                                  if (!a) return "No se seleccionó audio";
-                                  editTrack({
-                                    audio_id: a.id,
-                                    provider: "imported",
-                                  });
-                                }, "Toma importada; guarda el episodio")
+                                run(
+                                  importTake,
+                                  "Toma importada al historial; escúchala antes de elegirla",
+                                )
                               }
                             >
                               <Upload size={15} />
                               Importar audio
                             </button>
-                            {track?.provider !== "imported" && (
+
+                            {
                               <button
                                 className="primary"
                                 disabled={
                                   busy ||
-                                  !desktop ||
+                                  productionPending ||
+                                  !localEngine ||
                                   !(
                                     track?.script ||
                                     (language === project.language
@@ -1005,14 +1151,37 @@ export default function App() {
                                 onClick={() => production("generate_voice")}
                               >
                                 <Mic2 size={15} />
-                                Generar toma
+                                Generar audio completo
                               </button>
-                            )}
+                            }
                           </div>
-                          {!desktop && track?.provider !== "imported" && (
+                          <p className="provider-hint">
+                            {(track?.model || "voice_design") ===
+                            "custom_voice_small"
+                              ? "El modelo ligero usa una voz fija (Ryan). El guion define el tono; las instrucciones de timbre no se aplican en este modelo."
+                              : "Describe timbre, acento y ritmo. La toma se conserva para tu revisión."}
+                          </p>
+                          {latestVoice?.state === "failed" && (
+                            <p role="alert" className="take-warning">
+                              {latestVoice.error}
+                            </p>
+                          )}
+                          <button
+                            className="sample-button"
+                            disabled={
+                              busy ||
+                              productionPending ||
+                              !localEngine ||
+                              !effectiveScript.trim()
+                            }
+                            onClick={() => production("generate_voice", true)}
+                          >
+                            Probar voz · muestra corta
+                          </button>
+                          {!localEngine && (
                             <p className="provider-hint">
-                              La generación se activa en el escritorio con el
-                              proveedor conectado.
+                              Abre la aplicación local para generar voz. La demo
+                              solo conserva archivos importados.
                             </p>
                           )}
                           <details className="voice-direction">
@@ -1027,6 +1196,32 @@ export default function App() {
                             </button>
                           </details>
                         </div>
+                      </section>
+                      <section className="recording-console">
+                        <div className="panel-header">
+                          <span className="eyebrow">
+                            TOMA / {language.toUpperCase()}
+                          </span>
+                          <span
+                            className={
+                              track?.takes?.some((t) => t.status === "ready")
+                                ? "ready-label"
+                                : "empty-label"
+                            }
+                          >
+                            {track?.takes?.some((t) => t.status === "ready")
+                              ? "Lista para escuchar"
+                              : "Sin toma"}
+                          </span>
+                        </div>
+                        <TakeReview
+                          key={project.id + ":" + language}
+                          track={track}
+                          generation={voiceJob}
+                          script={effectiveScript}
+                          busy={busy || productionPending}
+                          onAction={takeAction}
+                        />
                       </section>
                     </div>
                     <div className="audio-bottom">
@@ -1057,84 +1252,105 @@ export default function App() {
                       </details>
                       <div className="render-footer">
                         <div>
-                          <span className="eyebrow">SALIDA / MP4 1080P</span>
-                          <p>Imagen fija + audio de {language.toUpperCase()}</p>
+                          <span className="eyebrow">SIGUIENTE / VÍDEO</span>
+                          <p>
+                            {track?.audio_id
+                              ? "Toma elegida. Prepara el tema y el montaje."
+                              : "Escucha las tomas y elige una completa."}
+                          </p>
                           <span>
-                            {!project.thumbnail_id
-                              ? "Falta miniatura"
-                              : !track?.audio_id
-                                ? "Falta audio"
-                                : "Recursos de montaje listos"}
+                            La generación no elige una toma automáticamente.
                           </span>
                         </div>
-                        {!project.thumbnail_id ? (
-                          <button onClick={() => setTab("metadata")}>
-                            Añadir miniatura <ChevronRight size={15} />
-                          </button>
-                        ) : (
-                          <button
-                            className="primary"
-                            disabled={busy || !track?.audio_id || !desktop}
-                            onClick={() => production("render_video")}
-                          >
-                            <Clapperboard size={16} />
-                            Montar vídeo
-                          </button>
-                        )}
+                        <button onClick={() => setTab("video")}>
+                          Preparar vídeo <ChevronRight size={15} />
+                        </button>
                       </div>
                     </div>
                   </section>
                 )}
                 {activeJobs.length > 0 && (
-                  <section className="jobs">
-                    <h2>Cola del episodio</h2>
-                    {activeJobs.map((j) => (
-                      <div key={j.id}>
-                        <strong>{j.kind}</strong>
-                        <span>
-                          {j.state} · {Math.round(j.progress * 100)}%
-                        </span>
-                        {j.error && <p>{j.error}</p>}
-                        {j.result.url && (
-                          <a
-                            href={j.result.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Ver en YouTube <ExternalLink size={12} />
-                          </a>
-                        )}
-                        {j.state === "queued" && (
-                          <button
-                            onClick={() =>
-                              run(() =>
-                                command("job_action", {
-                                  job_id: j.id,
-                                  action: "cancel",
-                                }),
-                              )
-                            }
-                          >
-                            Cancelar
-                          </button>
-                        )}
-                        {["failed", "needs_review"].includes(j.state) && (
-                          <button
-                            onClick={() =>
-                              run(() =>
-                                command("job_action", {
-                                  job_id: j.id,
-                                  action: "retry",
-                                }),
-                              )
-                            }
-                          >
-                            Reintentar
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </section>
+                  <details className="jobs" open={productionPending}>
+                    <summary>
+                      Actividad del episodio{" "}
+                      <span>{activeJobs.length} trabajos</span>
+                    </summary>
+                    {activeJobs
+                      .filter(
+                        (j) =>
+                          !productionPending ||
+                          ["queued", "running", "needs_review"].includes(
+                            j.state,
+                          ),
+                      )
+                      .map((j) => (
+                        <div key={j.id}>
+                          <strong>
+                            {j.kind === "voice"
+                              ? "Generación de voz"
+                              : j.kind === "render"
+                                ? "Montaje de vídeo"
+                                : j.kind === "script"
+                                  ? "Generación de guion"
+                                  : j.kind}
+                          </strong>
+                          <span>
+                            {(
+                              {
+                                queued: "En cola",
+                                running: "En curso",
+                                done: "Completado",
+                                failed: "Falló",
+                                needs_review: "Revisar",
+                                cancelled: "Cancelado",
+                              } as Record<string, string>
+                            )[j.state] || j.state}{" "}
+                            ·{" "}
+                            {j.kind === "script" && j.state === "running"
+                              ? `${j.result.fragments || 0} fragmentos`
+                              : `${Math.round(j.progress * 100)}%`}
+                          </span>
+                          {j.error && <p>{j.error}</p>}
+                          {j.result.url && (
+                            <a
+                              href={j.result.url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Ver en YouTube <ExternalLink size={12} />
+                            </a>
+                          )}
+                          {j.state === "queued" && (
+                            <button
+                              onClick={() =>
+                                run(() =>
+                                  command("job_action", {
+                                    job_id: j.id,
+                                    action: "cancel",
+                                  }),
+                                )
+                              }
+                            >
+                              Cancelar
+                            </button>
+                          )}
+                          {["failed", "needs_review"].includes(j.state) && (
+                            <button
+                              onClick={() =>
+                                run(() =>
+                                  command("job_action", {
+                                    job_id: j.id,
+                                    action: "retry",
+                                  }),
+                                )
+                              }
+                            >
+                              Reintentar
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                  </details>
                 )}
               </section>
             ) : (
@@ -1282,6 +1498,8 @@ export default function App() {
             {(channelDraft || channel) && (
               <ChannelForm
                 channel={channelDraft || channel!}
+                assets={state.assets}
+                busy={busy}
                 onSave={(c) =>
                   run(async () => {
                     if (dirty) await saveProject();
@@ -1350,6 +1568,24 @@ export default function App() {
                 <Mic2 />
                 <h2>Voces y entorno local</h2>
               </div>
+              <div className="local-model-status">
+                <p>
+                  <strong>
+                    {state.local_voice?.models.voice_design
+                      ? "Diseño de voz listo"
+                      : "Diseño de voz pendiente"}
+                  </strong>
+                  <span>
+                    {state.local_voice?.models.custom_voice_small
+                      ? "Qwen ligero listo"
+                      : "Qwen ligero pendiente"}
+                  </span>
+                </p>
+                <p>
+                  Los modelos preparados generan sin Internet. Los entornos y
+                  pesos viven fuera de la aplicación.
+                </p>
+              </div>
               <label>
                 Clave de ElevenLabs
                 <input
@@ -1373,6 +1609,18 @@ export default function App() {
                 />
               </label>
               <label>
+                Carpeta de modelos Qwen
+                <input
+                  value={settings.qwen_models_dir || ""}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      qwen_models_dir: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
                 Python de Chatterbox
                 <input
                   value={settings.chatterbox_python || ""}
@@ -1388,7 +1636,7 @@ export default function App() {
               <label>
                 Dispositivo
                 <select
-                  value={settings.tts_device || "cpu"}
+                  value={settings.tts_device || "cuda:0"}
                   onChange={(e) =>
                     setSettings({ ...settings, tts_device: e.target.value })
                   }
@@ -1399,9 +1647,9 @@ export default function App() {
                 </select>
               </label>
               <p>
-                Instala Qwen3-TTS y Chatterbox en entornos separados según la
-                documentación. La voz local puede descargar modelos grandes al
-                primer uso.
+                Preparación inicial: scripts/setup-local-qwen.sh. Después, la
+                generación local usa únicamente los pesos descargados. CPU es
+                más lenta; CUDA aprovecha la GPU.
               </p>
               <button
                 className="primary"
@@ -1442,11 +1690,17 @@ export default function App() {
 function ChannelForm({
   channel,
   onSave,
+  assets,
+  busy,
 }: {
+  assets: Snapshot["assets"];
+  busy: boolean;
   channel: Channel;
   onSave: (c: Channel) => void;
 }) {
   const [draft, setDraft] = useState(channel);
+  const [brandingError, setBrandingError] = useState("");
+  const [importedAssets, setImportedAssets] = useState<Snapshot["assets"]>([]);
   useEffect(() => setDraft(structuredClone(channel)), [channel.id]);
   return (
     <form
@@ -1493,6 +1747,39 @@ function ChannelForm({
           />
         </label>
       </div>
+      <section className="channel-branding-settings">
+        <h2>Intro y cierre del canal</h2>
+        <ChannelBranding
+          value={draft.branding || { intro_id: "", outro_id: "" }}
+          assets={[...assets, ...importedAssets]}
+          busy={busy}
+          onChange={(branding) => setDraft({ ...draft, branding })}
+          onImport={async (part) => {
+            setBrandingError("");
+            try {
+              const a = await importMedia("video");
+              if (a) {
+                setImportedAssets((items) => [
+                  ...items,
+                  { ...a, kind: "video", size: 0, sha256: "" },
+                ]);
+                setDraft((d) => ({
+                  ...d,
+                  branding: {
+                    intro_id: "",
+                    outro_id: "",
+                    ...d.branding,
+                    [part]: a.id,
+                  },
+                }));
+              }
+            } catch (e) {
+              setBrandingError(String(e));
+            }
+          }}
+        />
+        {brandingError && <p role="alert">{brandingError}</p>}
+      </section>
       {Object.entries(labels).map(([key, label]) => (
         <label key={key}>
           {label}
