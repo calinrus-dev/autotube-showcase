@@ -8,6 +8,12 @@ Canal → proyecto/episodio → guion y recursos → pistas por idioma → monta
 
 El nombre del canal, su audiencia, propósito, tono, evidencia y lenguaje visual no dependen del diseño de la aplicación. Un proyecto conserva sus excepciones al criterio del canal. El MCP devuelve ambos perfiles y el resultado efectivo.
 
+## Distribución de la consola
+
+La cabecera reúne canal, navegación y estado del motor. El selector de episodio y un inventario desplegable con búsqueda sustituyen las columnas laterales permanentes. Guion, Audio y Publicación son espacios separados: cada fase enseña las herramientas que necesita.
+
+La mesa de audio coloca texto y toma en paralelo en escritorio, y se adapta a una columna en pantallas pequeñas. Guarda con el botón o Ctrl/Cmd+S. Si cambias de canal o episodio con trabajo pendiente, un diálogo permite guardar y cambiar, descartar o continuar editando.
+
 ## Mesa de audio
 
 La interfaz trata cada idioma como una pista de producción, con guion, toma, motor y metadatos localizados. Se puede escuchar el archivo real importado o generado. Un audio inexistente se representa como vacío, sin ondas o reproducciones ficticias.

@@ -30,7 +30,13 @@ export default function App() {
   const [project, setProject] = useState<Project>();
   const [dirty, setDirty] = useState(false);
   const [page, setPage] = useState("studio");
-  const [tab, setTab] = useState("script");
+  const [tab, setTab] = useState("audio");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
+  const [pendingChange, setPendingChange] = useState<{
+    type: "project" | "channel";
+    id: string;
+  }>();
   const [language, setLanguage] = useState("es");
   const [newLanguage, setNewLanguage] = useState("en");
   const [addingLanguage, setAddingLanguage] = useState(false);
@@ -74,24 +80,66 @@ export default function App() {
   }, [state]);
   const track = project?.tracks.find((t) => t.language === language);
   useEffect(() => {
+    let active = true;
     setAudio("");
     if (track?.audio_id)
       command<string>("asset_preview", { asset_id: track.audio_id })
-        .then(setAudio)
-        .catch((e) => setError(String(e)));
+        .then((value) => {
+          if (active) setAudio(value);
+        })
+        .catch((e) => {
+          if (active) setError(String(e));
+        });
+    return () => {
+      active = false;
+    };
   }, [track?.audio_id]);
   useEffect(() => {
+    let active = true;
     setImage("");
     if (project?.thumbnail_id)
       command<string>("asset_preview", { asset_id: project.thumbnail_id })
-        .then(setImage)
-        .catch((e) => setError(String(e)));
+        .then((value) => {
+          if (active) setImage(value);
+        })
+        .catch((e) => {
+          if (active) setError(String(e));
+        });
+    return () => {
+      active = false;
+    };
   }, [project?.thumbnail_id]);
   function selectProject(p: Project) {
-    if (dirty && !confirm("Hay cambios sin guardar. ¿Descartarlos?")) return;
+    if (dirty) {
+      setPendingChange({ type: "project", id: p.id });
+      return;
+    }
     setProject(structuredClone(p));
     setDirty(false);
     setLanguage(p.language);
+  }
+  function switchChannel(id: string) {
+    if (dirty) {
+      setPendingChange({ type: "channel", id });
+      return;
+    }
+    applyChange({ type: "channel", id });
+  }
+  function applyChange(change: { type: "project" | "channel"; id: string }) {
+    setDirty(false);
+    setPendingChange(undefined);
+    if (change.type === "channel") {
+      setChannelId(change.id);
+      setProject(undefined);
+      setSelected([]);
+      setChannelDraft(undefined);
+    } else {
+      const p = state?.projects.find((item) => item.id === change.id);
+      if (p) {
+        setProject(structuredClone(p));
+        setLanguage(p.language);
+      }
+    }
   }
   function edit(patch: Partial<Project>) {
     setProject((p) => (p ? { ...p, ...patch } : p));
@@ -100,12 +148,17 @@ export default function App() {
   function editTrack(patch: Partial<Track>) {
     if (!project) return;
     const current = track || newTrack(language);
-    edit({
-      tracks: [
-        ...project.tracks.filter((t) => t.language !== language),
-        { ...current, ...patch },
-      ],
-    });
+    const tracks = project.tracks.some((t) => t.language === language)
+      ? project.tracks.map((t) =>
+          t.language === language ? { ...t, ...patch } : t,
+        )
+      : [...project.tracks, { ...current, ...patch }];
+    tracks.sort(
+      (a, b) =>
+        Number(b.language === project.language) -
+        Number(a.language === project.language),
+    );
+    edit({ tracks });
   }
   async function run(task: () => Promise<unknown>, message = "Hecho") {
     setBusy(true);
@@ -138,11 +191,28 @@ export default function App() {
         provider:
           track?.provider === "imported" ? "qwen3" : track?.provider || "qwen3",
         voice: track?.voice || "",
-        instruction: resolved.tone,
+        instruction: [
+          resolved.narrator,
+          resolved.tone,
+          track?.provider === "qwen3" ? track?.voice : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
         model: "eleven_multilingual_v2",
       });
     }, "Trabajo añadido a la cola");
   }
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (project && dirty && !busy)
+          void run(saveProject, "Proyecto guardado");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [project, dirty, busy]);
   const resolved = {
     ...channel?.editorial,
     ...Object.fromEntries(
@@ -166,29 +236,22 @@ export default function App() {
     );
   return (
     <div className="app">
-      <aside className="sidebar">
+      <header className="console-header">
         <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
           <span className="brandmark">
-            <AudioLines size={22} />
+            <AudioLines size={24} />
           </span>
           <strong>
-            AutoTube<span>PRODUCTION DESK</span>
+            AutoTube<small>CREATOR CONSOLE</small>
           </strong>
         </a>
-        <div className="channel-select">
-          <label htmlFor="channel">ESPACIO DE CANAL</label>
+        <div className="channel-control">
+          <label htmlFor="channel">CANAL ACTIVO</label>
           <select
             id="channel"
+            aria-label="CANAL ACTIVO"
             value={channelId}
-            onChange={(e) => {
-              if (dirty && !confirm("¿Descartar los cambios sin guardar?"))
-                return;
-              setChannelId(e.target.value);
-              setProject(undefined);
-              setDirty(false);
-              setSelected([]);
-              setChannelDraft(undefined);
-            }}
+            onChange={(e) => switchChannel(e.target.value)}
           >
             {state.channels.map((c) => (
               <option key={c.id} value={c.id}>
@@ -196,12 +259,6 @@ export default function App() {
               </option>
             ))}
           </select>
-          <span className="connection">
-            <i />
-            {channel?.youtube_id
-              ? "Canal identificado · OAuth en Ajustes"
-              : "Sin conexión a YouTube"}
-          </span>
         </div>
         <nav aria-label="Navegación principal">
           {[
@@ -209,7 +266,7 @@ export default function App() {
             ["calendar", "Calendario", CalendarDays],
             ["channels", "Canales y criterio", Radio],
             ["settings", "Conexiones", Settings2],
-          ].map(([id, text, Icon]) => {
+          ].map(([id, label, Icon]) => {
             const I = Icon as typeof Radio;
             return (
               <button
@@ -217,24 +274,70 @@ export default function App() {
                 className={page === id ? "active" : ""}
                 onClick={() => setPage(String(id))}
               >
-                <I size={18} />
-                {String(text)}
-                {page === id && <ChevronRight size={14} />}
+                <I size={16} />
+                {String(label)}
               </button>
             );
           })}
         </nav>
-        <div className="sidebar-footer">
-          <span className="eyebrow">TU CRITERIO, CONECTADO</span>
-          <p>Guion → voz → montaje → publicación.</p>
-          <div>
-            <Layers3 size={15} /> MCP · contexto por proyecto
-          </div>
-          <small>
-            v{state.version} · {desktop ? "Escritorio" : "Demo local"}
-          </small>
+        <span className="engine-status">
+          <i />
+          {desktop ? "Motor local" : "Demo local"}
+        </span>
+      </header>
+      {pendingChange && (
+        <div className="modal-backdrop">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-title"
+            className="unsaved-dialog"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setPendingChange(undefined);
+              if (e.key === "Tab") {
+                const buttons = Array.from(
+                  e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                    "button:not(:disabled)",
+                  ),
+                );
+                const first = buttons[0],
+                  last = buttons[buttons.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                  e.preventDefault();
+                  last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                  e.preventDefault();
+                  first.focus();
+                }
+              }
+            }}
+          >
+            <span className="eyebrow">CAMBIOS SIN GUARDAR</span>
+            <h2 id="unsaved-title">Conserva tu trabajo antes de cambiar.</h2>
+            <p>Este episodio tiene una edición pendiente.</p>
+            <div>
+              <button autoFocus onClick={() => setPendingChange(undefined)}>
+                Seguir editando
+              </button>
+              <button onClick={() => applyChange(pendingChange)}>
+                Descartar cambios
+              </button>
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await saveProject();
+                    applyChange(pendingChange);
+                  }, "Guardado; espacio cambiado")
+                }
+              >
+                Guardar y cambiar
+              </button>
+            </div>
+          </section>
         </div>
-      </aside>
+      )}
       <main className="main">
         {!desktop && (
           <div className="demo-banner">
@@ -245,7 +348,7 @@ export default function App() {
             </span>
           </div>
         )}
-        <header className="topbar">
+        <header className={"topbar " + (page === "studio" ? "compact" : "")}>
           <div>
             <span className="eyebrow">
               {channel?.name || "Crea tu primer canal"}
@@ -288,65 +391,100 @@ export default function App() {
         )}
         {page === "studio" && (
           <div className="studio-layout">
-            <section className="inventory">
-              <div className="section-title">
-                <div>
-                  <span className="eyebrow">INVENTARIO</span>
-                  <h2>
-                    Episodios <small>{projects.length}</small>
-                  </h2>
-                </div>
-                <button
-                  className="iconbutton"
-                  disabled={!channel}
-                  aria-label="Nuevo episodio"
-                  onClick={() =>
-                    run(async () => {
-                      if (dirty) await saveProject();
-                      const p = await command<Project>(
-                        "save_project",
-                        newProject(channelId),
-                      );
-                      setProject(p);
-                      setLanguage("es");
-                      setDirty(false);
-                    }, "Episodio creado")
-                  }
+            <section
+              className="project-switcher"
+              aria-label="Inventario del canal"
+            >
+              <div className="project-picker">
+                <label htmlFor="project-picker">EPISODIO ACTIVO</label>
+                <select
+                  id="project-picker"
+                  aria-label="EPISODIO ACTIVO"
+                  value={project?.id || ""}
+                  onChange={(e) => {
+                    const p = projects.find((p) => p.id === e.target.value);
+                    if (p) selectProject(p);
+                  }}
                 >
-                  <Plus size={18} />
-                </button>
+                  {!projects.length && <option value="">Sin episodios</option>}
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
               </div>
-              {projects.map((p, i) => (
-                <button
-                  key={p.id}
-                  className={
-                    "episode " + (project?.id === p.id ? "selected" : "")
-                  }
-                  onClick={() => selectProject(p)}
-                >
-                  <span className="episode-number">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <strong>{p.title}</strong>
-                  <span>
-                    {p.video_id
-                      ? "MP4 listo"
-                      : p.tracks.some((t) => t.audio_id)
-                        ? "Audio disponible"
-                        : "En escritura"}{" "}
-                    · {p.tracks.length} idioma{p.tracks.length !== 1 ? "s" : ""}
-                  </span>
-                  <span className="episode-dot" />
-                </button>
-              ))}
-              <div className="inventory-note">
-                <FileText size={17} />
-                <p>
-                  Un proyecto guarda su guion, sus pistas y su criterio
-                  editorial.
-                </p>
-              </div>
+              <button
+                aria-expanded={libraryOpen}
+                onClick={() => setLibraryOpen(!libraryOpen)}
+              >
+                <Layers3 size={16} />
+                Inventario <span className="count">{projects.length}</span>
+              </button>
+              <button
+                disabled={!channel || busy}
+                onClick={() =>
+                  run(async () => {
+                    if (dirty) await saveProject();
+                    const p = await command<Project>(
+                      "save_project",
+                      newProject(channelId),
+                    );
+                    setProject(p);
+                    setLanguage("es");
+                    setDirty(false);
+                  }, "Episodio creado")
+                }
+              >
+                <Plus size={16} />
+                Nuevo episodio
+              </button>
             </section>
+            {libraryOpen && (
+              <section className="project-library">
+                <label className="library-search">
+                  Buscar episodios
+                  <input
+                    value={projectQuery}
+                    onChange={(e) => setProjectQuery(e.target.value)}
+                    placeholder="Título del episodio…"
+                  />
+                </label>
+                <div className="episode-grid">
+                  {projects
+                    .filter((p) =>
+                      p.title
+                        .toLowerCase()
+                        .includes(projectQuery.toLowerCase()),
+                    )
+                    .map((p, i) => (
+                      <button
+                        key={p.id}
+                        className={
+                          "episode " + (p.id === project?.id ? "selected" : "")
+                        }
+                        onClick={() => {
+                          selectProject(p);
+                          setLibraryOpen(false);
+                        }}
+                      >
+                        <span className="episode-number">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <strong>{p.title}</strong>
+                        <span>
+                          {p.video_id
+                            ? "MP4 listo"
+                            : p.tracks.some((t) => t.audio_id)
+                              ? "Audio disponible"
+                              : "En escritura"}{" "}
+                          · {p.tracks.length} idiomas
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              </section>
+            )}
             {project ? (
               <section className="workspace">
                 <div className="project-heading">
@@ -415,8 +553,9 @@ export default function App() {
                   aria-label="Edición del episodio"
                 >
                   {[
-                    ["script", "Guion"],
-                    ["metadata", "SEO y archivos"],
+                    ["script", "01 · Guion"],
+                    ["audio", "02 · Audio"],
+                    ["metadata", "03 · Publicación"],
                     ["brief", "Criterio del proyecto"],
                   ].map(([id, text]) => (
                     <button
@@ -431,27 +570,53 @@ export default function App() {
                   ))}
                 </div>
                 {tab === "script" && (
-                  <div className="script-area">
-                    <div className="editor-meta">
-                      <span>HABLA DIRECTO. SOSTÉN LO QUE DICES.</span>
-                      <span>
-                        {
-                          project.script.trim().split(/\s+/).filter(Boolean)
-                            .length
-                        }{" "}
-                        palabras
-                      </span>
+                  <div className="script-workbench">
+                    <div className="script-area">
+                      <div className="editor-meta">
+                        <span>HABLA DIRECTO. SOSTÉN LO QUE DICES.</span>
+                        <span>
+                          {
+                            project.script.trim().split(/\s+/).filter(Boolean)
+                              .length
+                          }{" "}
+                          palabras
+                        </span>
+                      </div>
+                      <textarea
+                        aria-label="Guion principal"
+                        placeholder="Pega o escribe aquí el guion…"
+                        value={project.script}
+                        onChange={(e) => edit({ script: e.target.value })}
+                      />
+                      <div className="tone-chip">
+                        <Mic2 size={16} />
+                        <p>{resolved.tone}</p>
+                      </div>
                     </div>
-                    <textarea
-                      aria-label="Guion principal"
-                      placeholder="Pega o escribe aquí el guion…"
-                      value={project.script}
-                      onChange={(e) => edit({ script: e.target.value })}
-                    />
-                    <div className="tone-chip">
-                      <Mic2 size={16} />
+                    <aside className="script-companion">
+                      <span className="eyebrow">CRITERIO EN ESTA SESIÓN</span>
+                      <h2>Claridad antes de narrar.</h2>
                       <p>{resolved.tone}</p>
-                    </div>
+                      <div className="evidence-box">
+                        <strong>
+                          {project.sources.filter(Boolean).length} fuentes
+                          añadidas
+                        </strong>
+                        <p>
+                          Una referencia añadida todavía requiere revisión.
+                          Separa evidencia, hipótesis e interpretación.
+                        </p>
+                      </div>
+                      <button onClick={() => setTab("brief")}>
+                        Afinar criterio <ChevronRight size={15} />
+                      </button>
+                      <button
+                        className="primary"
+                        onClick={() => setTab("audio")}
+                      >
+                        Pasar a la mesa de audio <ChevronRight size={15} />
+                      </button>
+                    </aside>
                   </div>
                 )}
                 {tab === "metadata" && (
@@ -549,7 +714,7 @@ export default function App() {
                     </label>
                     <button
                       className="primary"
-                      disabled={busy}
+                      disabled={busy || !desktop || !project.video_id}
                       onClick={() => production("queue_upload")}
                     >
                       <Upload size={16} />
@@ -586,214 +751,340 @@ export default function App() {
                     ))}
                   </div>
                 )}
-                <section className="audio-desk">
-                  <div className="section-title">
-                    <div>
-                      <span className="eyebrow">AUDIO / PISTAS POR IDIOMA</span>
-                      <h2>Una idea. Varias voces.</h2>
-                    </div>
-                    <AudioLines size={26} />
-                  </div>
-                  <div className="language-tabs">
-                    {project.tracks.map((t) => (
-                      <button
-                        key={t.language}
-                        className={language === t.language ? "chosen" : ""}
-                        onClick={() => setLanguage(t.language)}
-                      >
-                        <span>{t.language.toUpperCase()}</span>
-                        <small>
-                          {t.audio_id ? "Audio listo" : "Sin audio"}
-                        </small>
-                      </button>
-                    ))}
-                    <button
-                      className="add-language"
-                      aria-label="Añadir idioma"
-                      onClick={() => setAddingLanguage(!addingLanguage)}
-                    >
-                      <Plus size={18} />
-                    </button>
-                  </div>
-                  {addingLanguage && (
-                    <div className="language-add">
-                      <label>
-                        Nuevo idioma
-                        <select
-                          value={newLanguage}
-                          onChange={(e) => setNewLanguage(e.target.value)}
-                        >
-                          {[
-                            ["en", "Inglés"],
-                            ["es", "Español"],
-                            ["fr", "Francés"],
-                            ["de", "Alemán"],
-                            ["it", "Italiano"],
-                            ["pt", "Portugués"],
-                            ["ja", "Japonés"],
-                            ["ko", "Coreano"],
-                            ["zh", "Chino"],
-                            ["ru", "Ruso"],
-                          ]
-                            .filter(
-                              ([id]) =>
-                                !project.tracks.some((t) => t.language === id),
-                            )
-                            .map(([id, name]) => (
-                              <option key={id} value={id}>
-                                {name}
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                      <button
-                        onClick={() => {
-                          if (
-                            project.tracks.some(
-                              (t) => t.language === newLanguage,
-                            )
-                          ) {
-                            setError("Ese idioma ya tiene pista");
-                            return;
-                          }
-                          edit({
-                            tracks: [...project.tracks, newTrack(newLanguage)],
-                          });
-                          setLanguage(newLanguage);
-                          setAddingLanguage(false);
-                        }}
-                      >
-                        Crear pista
-                      </button>
-                    </div>
-                  )}
-                  <div className="audio-row">
-                    <div className="audio-monitor">
-                      {audio ? (
-                        <audio
-                          aria-label={"Escuchar pista " + language}
-                          controls
-                          src={audio}
-                        />
-                      ) : (
-                        <>
-                          <AudioLines size={38} />
-                          <p>
-                            Esta pista aún no tiene audio.
-                            <br />
-                            <span>Importa una toma o genera la narración.</span>
-                          </p>
-                        </>
-                      )}
-                      <span className="file-caption">
-                        {nameOf(track?.audio_id || "")}
+                {tab === "audio" && (
+                  <section className="audio-desk">
+                    <div className="audio-title">
+                      <div>
+                        <span className="eyebrow">MESA DE AUDIO</span>
+                        <h2>Prepara y revisa tu narración.</h2>
+                      </div>
+                      <span className="audio-format">
+                        {project.tracks.length} pistas /{" "}
+                        {language.toUpperCase()}
                       </span>
                     </div>
-                    <div className="voice-controls">
-                      <label>
-                        Motor de voz
-                        <select
-                          value={track?.provider || "imported"}
-                          onChange={(e) =>
-                            editTrack({
-                              provider: e.target.value as Track["provider"],
-                            })
-                          }
-                        >
-                          <option value="imported">Audio importado</option>
-                          <option value="elevenlabs">ElevenLabs</option>
-                          <option value="qwen3">Qwen3-TTS · local</option>
-                          <option value="chatterbox">Chatterbox · local</option>
-                        </select>
-                      </label>
-                      <label>
-                        {track?.provider === "elevenlabs"
-                          ? "ID de voz ElevenLabs"
-                          : "Nota de voz / referencia editorial"}
-                        <input
-                          value={track?.voice || ""}
-                          onChange={(e) => editTrack({ voice: e.target.value })}
-                          placeholder={
-                            track?.provider === "elevenlabs"
-                              ? "ID de la biblioteca de voces"
-                              : "Precisa, cercana, sin teatralizar"
-                          }
-                        />
-                      </label>
-                      <div className="button-row">
+                    <div className="language-tabs">
+                      {project.tracks.map((t) => (
                         <button
-                          onClick={() =>
-                            run(async () => {
-                              const a = await importMedia("audio");
-                              if (a)
-                                editTrack({
-                                  audio_id: a.id,
-                                  provider: "imported",
-                                });
-                            }, "Audio añadido; guarda el proyecto")
-                          }
+                          key={t.language}
+                          className={language === t.language ? "chosen" : ""}
+                          onClick={() => setLanguage(t.language)}
                         >
-                          Importar
+                          <span>{t.language.toUpperCase()}</span>
+                          <small>
+                            {t.audio_id ? "Audio listo" : "Sin audio"}
+                          </small>
                         </button>
+                      ))}
+                      <button
+                        className="add-language"
+                        aria-label="Añadir idioma"
+                        onClick={() => setAddingLanguage(!addingLanguage)}
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+                    {addingLanguage && (
+                      <div className="language-add">
+                        <label>
+                          Nuevo idioma
+                          <select
+                            value={newLanguage}
+                            onChange={(e) => setNewLanguage(e.target.value)}
+                          >
+                            {[
+                              ["en", "Inglés"],
+                              ["es", "Español"],
+                              ["fr", "Francés"],
+                              ["de", "Alemán"],
+                              ["it", "Italiano"],
+                              ["pt", "Portugués"],
+                              ["ja", "Japonés"],
+                              ["ko", "Coreano"],
+                              ["zh", "Chino"],
+                              ["ru", "Ruso"],
+                            ]
+                              .filter(
+                                ([id]) =>
+                                  !project.tracks.some(
+                                    (t) => t.language === id,
+                                  ),
+                              )
+                              .map(([id, name]) => (
+                                <option key={id} value={id}>
+                                  {name}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
                         <button
-                          className="primary"
-                          disabled={busy || track?.provider === "imported"}
-                          onClick={() => production("generate_voice")}
+                          onClick={() => {
+                            if (
+                              project.tracks.some(
+                                (t) => t.language === newLanguage,
+                              )
+                            ) {
+                              setError("Ese idioma ya tiene pista");
+                              return;
+                            }
+                            edit({
+                              tracks: [
+                                ...project.tracks,
+                                newTrack(newLanguage),
+                              ],
+                            });
+                            setLanguage(newLanguage);
+                            setAddingLanguage(false);
+                          }}
                         >
-                          <Mic2 size={15} />
-                          Generar
+                          Crear pista
                         </button>
                       </div>
-                    </div>
-                  </div>
-                  <details>
-                    <summary>
-                      Guion y metadatos de la pista {language.toUpperCase()}
-                    </summary>
-                    <label>
-                      Guion de este idioma
-                      <textarea
-                        value={track?.script || ""}
-                        placeholder={
-                          language === project.language
-                            ? "Si está vacío, usa el guion principal."
-                            : "Pega aquí la traducción revisada."
-                        }
-                        onChange={(e) => editTrack({ script: e.target.value })}
-                      />
-                    </label>
-                    <div className="form-grid">
-                      <label>
-                        Título localizado
-                        <input
-                          value={track?.title || ""}
-                          onChange={(e) => editTrack({ title: e.target.value })}
-                        />
-                      </label>
-                      <label>
-                        Descripción localizada
+                    )}
+
+                    <div className="audio-workbench">
+                      <section className="narration-sheet">
+                        <div className="panel-header">
+                          <span className="eyebrow">
+                            GUION DE LA PISTA / {language.toUpperCase()}
+                          </span>
+                          <span>
+                            {language === project.language
+                              ? "Original"
+                              : "Traducción"}
+                          </span>
+                        </div>
                         <textarea
-                          value={track?.description || ""}
+                          aria-label="Guion de la pista"
+                          value={
+                            track?.script ||
+                            (language === project.language
+                              ? project.script
+                              : "")
+                          }
+                          placeholder={
+                            language === project.language
+                              ? "Pega aquí el texto que quieres narrar…"
+                              : "Añade la traducción revisada de este idioma…"
+                          }
                           onChange={(e) =>
-                            editTrack({ description: e.target.value })
+                            language === project.language && !track?.script
+                              ? edit({ script: e.target.value })
+                              : editTrack({ script: e.target.value })
                           }
                         />
-                      </label>
+                        <div className="sheet-footer">
+                          <span>
+                            {
+                              (
+                                track?.script ||
+                                (language === project.language
+                                  ? project.script
+                                  : "")
+                              )
+                                .trim()
+                                .split(/\s+/)
+                                .filter(Boolean).length
+                            }{" "}
+                            palabras
+                          </span>
+                          <button
+                            className="subtle"
+                            onClick={() => setTab("script")}
+                          >
+                            Abrir guion principal <ChevronRight size={14} />
+                          </button>
+                        </div>
+                      </section>
+                      <section className="recording-console">
+                        <div className="panel-header">
+                          <span className="eyebrow">
+                            TOMA / {language.toUpperCase()}
+                          </span>
+                          <span
+                            className={audio ? "ready-label" : "empty-label"}
+                          >
+                            {audio ? "Lista para escuchar" : "Sin toma"}
+                          </span>
+                        </div>
+                        <div className="audio-monitor">
+                          {audio ? (
+                            <>
+                              <AudioLines size={40} />
+                              <h3>Escucha, revisa, decide.</h3>
+                              <audio
+                                aria-label={"Escuchar pista " + language}
+                                controls
+                                src={audio}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <div className="empty-record">
+                                <Mic2 size={30} />
+                              </div>
+                              <h3>Haz que el texto tenga voz.</h3>
+                              <p>
+                                Importa tu audio o elige un motor
+                                <br />
+                                para generar la primera toma.
+                              </p>
+                            </>
+                          )}
+                          <span className="file-caption">
+                            {nameOf(track?.audio_id || "")}
+                          </span>
+                        </div>
+                        <div className="voice-controls">
+                          <label>
+                            Motor de voz
+                            <select
+                              value={track?.provider || "imported"}
+                              onChange={(e) =>
+                                editTrack({
+                                  provider: e.target.value as Track["provider"],
+                                })
+                              }
+                            >
+                              <option value="imported">Audio importado</option>
+                              <option value="elevenlabs">ElevenLabs</option>
+                              <option value="qwen3">Qwen3-TTS · local</option>
+                              <option value="chatterbox">
+                                Chatterbox · local
+                              </option>
+                            </select>
+                          </label>
+                          {(track?.provider === "elevenlabs" ||
+                            track?.provider === "qwen3") && (
+                            <label>
+                              {track?.provider === "elevenlabs"
+                                ? "ID de voz ElevenLabs"
+                                : "Descripción de la voz"}
+                              <input
+                                value={track?.voice || ""}
+                                onChange={(e) =>
+                                  editTrack({ voice: e.target.value })
+                                }
+                                placeholder={
+                                  track?.provider === "elevenlabs"
+                                    ? "ID de tu biblioteca de voces"
+                                    : "Serena, precisa, cercana, sin teatralizar"
+                                }
+                              />
+                            </label>
+                          )}
+                          <div className="button-row">
+                            <button
+                              onClick={() =>
+                                run(async () => {
+                                  const a = await importMedia("audio");
+                                  if (!a) return "No se seleccionó audio";
+                                  editTrack({
+                                    audio_id: a.id,
+                                    provider: "imported",
+                                  });
+                                }, "Toma importada; guarda el episodio")
+                              }
+                            >
+                              <Upload size={15} />
+                              Importar audio
+                            </button>
+                            {track?.provider !== "imported" && (
+                              <button
+                                className="primary"
+                                disabled={
+                                  busy ||
+                                  !desktop ||
+                                  !(
+                                    track?.script ||
+                                    (language === project.language
+                                      ? project.script
+                                      : "")
+                                  ).trim()
+                                }
+                                onClick={() => production("generate_voice")}
+                              >
+                                <Mic2 size={15} />
+                                Generar toma
+                              </button>
+                            )}
+                          </div>
+                          {!desktop && track?.provider !== "imported" && (
+                            <p className="provider-hint">
+                              La generación se activa en el escritorio con el
+                              proveedor conectado.
+                            </p>
+                          )}
+                          <details className="voice-direction">
+                            <summary>Dirección de la narración</summary>
+                            <p>{resolved.narrator}</p>
+                            <p>{resolved.tone}</p>
+                            <button
+                              className="subtle"
+                              onClick={() => setTab("brief")}
+                            >
+                              Editar criterio
+                            </button>
+                          </details>
+                        </div>
+                      </section>
                     </div>
-                  </details>
-                  <div className="render-footer">
-                    <span>
-                      Montaje inicial: miniatura fija + audio → MP4 1080p.
-                    </span>
-                    <button
-                      disabled={busy}
-                      onClick={() => production("render_video")}
-                    >
-                      <Clapperboard size={16} />
-                      Montar {language.toUpperCase()}
-                    </button>
-                  </div>
-                </section>
+                    <div className="audio-bottom">
+                      <details className="localization">
+                        <summary>
+                          Metadatos de la versión {language.toUpperCase()}
+                        </summary>
+                        <div className="form-grid">
+                          <label>
+                            Título localizado
+                            <input
+                              value={track?.title || ""}
+                              onChange={(e) =>
+                                editTrack({ title: e.target.value })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Descripción localizada
+                            <textarea
+                              value={track?.description || ""}
+                              onChange={(e) =>
+                                editTrack({ description: e.target.value })
+                              }
+                            />
+                          </label>
+                        </div>
+                      </details>
+                      <div className="render-footer">
+                        <div>
+                          <span className="eyebrow">SALIDA / MP4 1080P</span>
+                          <p>Imagen fija + audio de {language.toUpperCase()}</p>
+                          <span>
+                            {!project.thumbnail_id
+                              ? "Falta miniatura"
+                              : !track?.audio_id
+                                ? "Falta audio"
+                                : "Recursos de montaje listos"}
+                          </span>
+                        </div>
+                        {!project.thumbnail_id ? (
+                          <button onClick={() => setTab("metadata")}>
+                            Añadir miniatura <ChevronRight size={15} />
+                          </button>
+                        ) : (
+                          <button
+                            className="primary"
+                            disabled={busy || !track?.audio_id || !desktop}
+                            onClick={() => production("render_video")}
+                          >
+                            <Clapperboard size={16} />
+                            Montar vídeo
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )}
                 {activeJobs.length > 0 && (
                   <section className="jobs">
                     <h2>Cola del episodio</h2>

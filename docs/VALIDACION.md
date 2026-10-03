@@ -11,10 +11,12 @@ Fecha: 3 de octubre de 2026. Entorno: Linux, motor Python 3.12, React 19, Tauri 
 - Render FFmpeg real: MP4 H.264 1920×1080 con pista AAC; inspección con ffprobe.
 - Exportación de proyecto sin tokens ni credenciales.
 - Cliente MCP stdio real frente al motor vivo: initialize, tools, inventory y contexto editorial.
-- `cargo check` del puente Tauri/Rust y build release Linux con paquete `.deb`.
+- `cargo check` del puente Tauri/Rust y build release Linux con paquetes `.deb` y AppImage.
 - Motor empaquetado con PyInstaller: arranque real, healthcheck y snapshot autenticado.
 - Interacción de navegador: guardar y recargar guion, persistir segunda pista, crear canal independiente, separar su inventario y aplicar tono por episodio.
 - Inspección visual de escritorio/móvil: sin errores ni desbordamiento, sin incidencias graves en el análisis automático de accesibilidad inicial.
+
+- Rediseño 0.2: inventario desplegable y búsqueda; texto/toma en paralelo; guardado antes de cambiar de canal; importación de WAV decodificado con duración real; previsualizaciones cancelables y orden de idiomas estable.
 
 ## Pendiente de conexión o hardware
 

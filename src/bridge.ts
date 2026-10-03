@@ -130,7 +130,7 @@ export async function importMedia(
       ? command("import_asset", { path, kind })
       : null;
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = kind === "thumbnail" ? "image/*" : kind + "/*";
@@ -139,10 +139,11 @@ export async function importMedia(
       const file = input.files?.[0];
       if (!file) return resolve(null);
       if (file.size > 5 * 1024 * 1024) {
-        alert(
-          "La demo admite archivos de hasta 5 MiB. El escritorio admite archivos mayores.",
+        return reject(
+          new Error(
+            "La demo admite archivos de hasta 5 MiB. Usa el escritorio para archivos mayores.",
+          ),
         );
-        return resolve(null);
       }
       const reader = new FileReader();
       reader.onload = () => {
@@ -162,10 +163,11 @@ export async function importMedia(
           save(state);
           resolve({ id, name: file.name });
         } catch {
-          alert("No hay espacio en el almacenamiento de la demo.");
-          resolve(null);
+          reject(new Error("No hay espacio en el almacenamiento de la demo."));
         }
       };
+      reader.onerror = () =>
+        reject(new Error("No se pudo leer el archivo de audio o imagen."));
       reader.readAsDataURL(file);
     };
     input.click();

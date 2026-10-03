@@ -8,6 +8,8 @@ Este repositorio público contiene la demo interactiva de la interfaz y document
 
 ## Diseño y flujo
 
+La consola 0.2 reúne canal y navegación arriba. El inventario se despliega con búsqueda, y Guion, Audio y Publicación tienen vistas propias. En escritorio, el texto de cada pista y su toma se editan en paralelo. El cambio de contexto con ediciones pendientes ofrece guardar, descartar o seguir trabajando.
+
 - Inventario de episodios separado por canal.
 - Guion, descripción, etiquetas, fuentes y recursos del episodio.
 - Criterio heredado por canal y tono ajustable por proyecto.
