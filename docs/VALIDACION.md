@@ -1,6 +1,6 @@
 # Validación de la entrega
 
-Fecha: 4 de octubre de 2026. Entorno: Linux, motor Python 3.12, React 19, Tauri 2.
+Entrega inicial: 4 de octubre de 2026. Showcase actualizado: 8 de octubre de 2026. La evidencia del motor privado se distingue de las comprobaciones de esta demo. Entorno de la aplicación: Linux, motor Python 3.12, React 19, Tauri 2.
 
 ## Comprobado
 
@@ -38,3 +38,14 @@ Vista de lectura, historial de tomas, recuperación de descartadas, elección de
 ## Editor local y texto 0.3
 
 Build/Vitest de la demo aprobados. En la implementación privada pasan 18 pruebas Python y 3 Vitest. Se han verificado streaming de Ollama, detención sin sustituir el guion, versiones recuperables, aprobación de muestras, intro/cierre por canal y un bucle real que cubre la narración. El motor empaquetado genera texto y voz y exporta MP4; la comprobación interactiva nativa sigue pendiente. No se publican datos de producción ni configuración privada.
+
+## Demo pública 0.4.2 · 8 de octubre de 2026
+
+- Interfaz sincronizada con la cinta de herramientas, fases y estados del episodio, Solo audio y acciones fijas de la aplicación local.
+- `npm ci` y `npm run verify`: build TypeScript/Vite y **7 pruebas Vitest aprobadas**. Las pruebas comprueban, entre otros casos, que una muestra no se trate como toma completa, que un guion cambiado exija revisar el audio y que los trabajos se atribuyan al idioma correcto.
+- Navegador a **1440×900** y **390×844**: sin desbordamiento horizontal ni vertical de la página en las vistas de Guion y Voz inspeccionadas. Los documentos y listas conservan su desplazamiento interno. Guardar, Pasar a voz y Generar propuesta permanecen dentro de la vista de escritorio.
+- Interacción comprobada: cambiar entre Solo audio y Vídeo, editar/guardar/recargar el guion, importar un WAV sintético, elegir la toma, descartarla y alternar los paneles móviles Guion y voz / Escuchar y guardar. No se han conectado cuentas ni utilizado proveedores de generación.
+- El botón Guardar audio inicia la descarga desde el recurso importado. El navegador integrado no confirmó el evento ni el archivo descargado; queda pendiente comprobar ese resultado en un navegador con descarga de archivos.
+- Capturas actuales de la demo con datos ficticios: resumen de producción, guion y vista móvil. El código de la demo no activa el modo de conexión al motor local mediante una variable de entorno.
+
+La documentación de origen de la aplicación privada 0.4.2 registra generación real de texto y voz, exportación FFmpeg, 21 pruebas Python y 4 pruebas Rust. Esos controles no se ejecutan en este repositorio: aquí no se publica el motor ni el empaquetado nativo. La subida a una cuenta real de YouTube y la inspección visual nativa siguen pendientes.

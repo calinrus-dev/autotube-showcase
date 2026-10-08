@@ -2,7 +2,11 @@
 
 ## Distribución
 
-Cabecera compacta con canal, episodio y guardado. Las herramientas del episodio son **Guion**, **Voz y tomas**, **Montaje**, **Publicación** y **Criterio**. La actividad se despliega cuando hay trabajos en curso. El tema es rosa oscuro. En móvil, los paneles se apilan y la navegación de herramientas admite desplazamiento horizontal.
+La interfaz **0.4.2** organiza el episodio con una cinta: **Resumen**, **Guion**, **Voz**, **Montaje** y **Publicación**. Los estados indican qué está preparado, en cola o requiere revisión. **Solo audio** reduce el recorrido a Guion y Voz. El criterio sigue disponible desde el control del episodio.
+
+Guardar y las acciones de cada herramienta permanecen visibles; se desplazan los documentos, las listas y los inspectores. Archivo, inventario y actividad se abren sobre el espacio de trabajo. En ventanas estrechas, Voz alterna entre **Guion y voz** y **Escuchar y guardar**. Conexiones separa Voces e IA, YouTube y MCP. El tema sigue siendo rosa oscuro.
+
+Este documento describe también funciones de la aplicación privada. La demo pública conserva edición, revisión de medios importados y almacenamiento en navegador; no incorpora el motor, los modelos ni la conexión de publicación.
 
 ## Guion y texto local
 
@@ -21,6 +25,8 @@ Las propuestas terminadas aparecen en **Versiones**. Puedes leerlas, usarlas, de
 ## Voz y muestras
 
 Cada idioma conserva su historial. Los filtros muestran todas las tomas, solo muestras o solo completas. Selecciona una para reproducir su archivo y leer el texto asociado. **Esta voz sí** aprueba los ajustes de una muestra para la siguiente generación; no convierte el fragmento en una narración completa. **Usar esta toma** elige el audio completo para el montaje. Descartar es reversible. Cambiar el texto advierte que las tomas anteriores necesitan revisión.
+
+**Guardar audio** o **Guardar muestra** conserva el archivo por separado, sin montaje ni YouTube. En escritorio se copia a la carpeta de exportaciones de AutoTube; en la demo se descarga un recurso importado. **Guardar vídeo** hace lo mismo con un vídeo existente. Reabrir Voz muestra la toma elegida.
 
 La generación de voz indica carga del modelo, avance, muestra/toma e idioma y tiempo transcurrido. Los modelos Qwen preparados generan sin Internet. VoiceDesign interpreta instrucciones de voz; CustomVoice 0.6B usa la voz Ryan. El worker es serial para evitar competir por memoria con la generación de texto.
 

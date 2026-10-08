@@ -113,8 +113,9 @@ export interface Job {
   created_at?: string;
   payload: {
     project: Project;
+    language?: string;
     publish_at?: string;
-    request?: { sample?: boolean };
+    request?: { sample?: boolean; language?: string };
   };
   result: {
     url?: string;

@@ -12,9 +12,9 @@ El flujo vigente de guion local, revisión de muestras y montaje está descrito 
 
 ## Distribución de la consola
 
-La cabecera reúne canal, navegación y estado del motor. El selector de episodio y un inventario desplegable con búsqueda sustituyen las columnas laterales permanentes. Guion, Audio, Vídeo y Publicación son espacios separados: cada fase enseña las herramientas que necesita.
+La cabecera reúne canal, navegación y estado. La interfaz 0.4.2 utiliza una cinta con Resumen, Guion, Voz, Montaje y Publicación, estados visibles y acciones fijas. El selector de episodio y un inventario desplegable con búsqueda sustituyen las columnas laterales permanentes. La ventana conserva su tamaño; documentos, listas e inspectores se desplazan dentro de sus paneles.
 
-La mesa de audio coloca texto y toma en paralelo en escritorio, y se adapta a una columna en pantallas pequeñas. Guarda con el botón o Ctrl/Cmd+S. Si cambias de canal o episodio con trabajo pendiente, un diálogo permite guardar y cambiar, descartar o continuar editando.
+La mesa de audio coloca texto y toma en paralelo en escritorio; en pantallas estrechas permite alternar Guion y voz con Escuchar y guardar. Guarda con el botón o Ctrl/Cmd+S. Si cambias de canal o episodio con trabajo pendiente, un diálogo permite guardar y cambiar, descartar o continuar editando. Solo audio permite guardar una toma y terminar sin montaje ni publicación. Conexiones agrupa Voces e IA, YouTube y MCP.
 
 ## Mesa de audio
 

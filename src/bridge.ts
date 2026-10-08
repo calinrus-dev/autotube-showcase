@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { Snapshot, Project, Channel } from "./types";
 import { editorial, newProject } from "./types";
 export const desktop = isTauri();
-export const localEngine = desktop || import.meta.env.VITE_LOCAL_ENGINE === "1";
+export const localEngine = desktop;
 export async function mediaPreview(assetId: string): Promise<string> {
   if (desktop)
     return convertFileSrc(
@@ -11,6 +11,28 @@ export async function mediaPreview(assetId: string): Promise<string> {
     );
   if (localEngine) return "/engine/media/" + encodeURIComponent(assetId);
   return command<string>("asset_preview", { asset_id: assetId });
+}
+export async function downloadAsset(assetId: string, title: string): Promise<string> {
+  if (desktop) {
+    const exported = await command<{ path: string }>("export_asset", { asset_id: assetId });
+    return "Archivo guardado: " + exported.path;
+  }
+  const snapshot = await command<Snapshot>("snapshot");
+  const asset = snapshot.assets.find((item) => item.id === assetId);
+  if (!asset) throw new Error("El recurso ya no está disponible.");
+  const response = await fetch(await mediaPreview(assetId));
+  if (!response.ok) throw new Error("No se pudo guardar el recurso.");
+  const blob = await response.blob();
+  const extension = asset.name.match(/\.[a-z0-9]{2,5}$/i)?.[0] || (asset.kind === "video" ? ".mp4" : ".wav");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = title.replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) + extension;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return asset.kind === "video" ? "Vídeo descargado" : "Audio descargado";
 }
 const storageKey = "autotube-demo-v1";
 const mediaKey = "autotube-demo-media-v1";
@@ -42,7 +64,7 @@ function seed(): Snapshot {
     jobs: [],
     settings: {},
     mode: "demo",
-    version: "0.3.0",
+    version: "0.4.2",
   };
 }
 function load(): Snapshot {

@@ -25,11 +25,15 @@ import {
   importMedia,
   choosePath,
   mediaPreview,
+  downloadAsset,
 } from "./bridge";
 import TakeReview from "./TakeReview";
 import VideoStage from "./VideoStage";
 import ChannelBranding from "./ChannelBranding";
 import ScriptWorkbench from "./ScriptWorkbench";
+import ProductionFlow, { ProductionOverview } from "./ProductionFlow";
+import { productionSteps } from "./production";
+import type { OutputTarget } from "./production";
 import { defaultTheme, editorial, labels, newProject, newTrack } from "./types";
 import type { Channel, Editorial, Project, Snapshot, Track } from "./types";
 
@@ -46,7 +50,22 @@ export default function App() {
   const [project, setProject] = useState<Project>();
   const [dirty, setDirty] = useState(false);
   const [page, setPage] = useState("studio");
-  const [tab, setTab] = useState("script");
+  const [connectionTool, setConnectionTool] = useState("voice");
+  const [audioPane, setAudioPane] = useState("text");
+  const [tab, setTab] = useState("overview");
+  const [outputTargets, setOutputTargets] = useState<Record<string, OutputTarget>>(() => {
+    try { return JSON.parse(localStorage.getItem("autotube-output-targets") || "{}") || {}; }
+    catch { return {}; }
+  });
+  const outputTarget = project && outputTargets[project.id] === "audio" ? "audio" : "video";
+  function changeOutputTarget(target: OutputTarget) {
+    if (!project) return;
+    const next = { ...outputTargets, [project.id]: target };
+    setOutputTargets(next);
+    try { localStorage.setItem("autotube-output-targets", JSON.stringify(next)); }
+    catch { setNotice("Este navegador no permite conservar la preferencia de salida."); }
+    if (target === "audio" && ["video", "metadata"].includes(tab)) setTab("overview");
+  }
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
   const [pendingChange, setPendingChange] = useState<{
@@ -71,6 +90,18 @@ export default function App() {
     setState(data);
     setChannelId((id) => id || data.channels[0]?.id || "");
     return data;
+  }
+  async function retryConnection() {
+    setBusy(true);
+    setError("");
+    try {
+      const data = await refresh();
+      setSettings(data.settings);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
   }
   useEffect(() => {
     refresh()
@@ -118,6 +149,7 @@ export default function App() {
     setProject(structuredClone(p));
     setDirty(false);
     setLanguage(p.language);
+    setTab("overview");
   }
   function switchChannel(id: string) {
     if (dirty) {
@@ -129,6 +161,7 @@ export default function App() {
   function applyChange(change: { type: "project" | "channel"; id: string }) {
     setDirty(false);
     setPendingChange(undefined);
+    setTab("overview");
     if (change.type === "channel") {
       setChannelId(change.id);
       setProject(undefined);
@@ -278,7 +311,7 @@ export default function App() {
       action === "approve"
         ? "Voz aprobada; sus ajustes se usarán al generar la toma completa"
         : action === "use"
-          ? "Toma elegida para el vídeo"
+          ? "Toma elegida; ya puedes guardar el audio o usarlo en un vídeo"
           : action === "discard"
             ? "Toma descartada; puedes recuperarla en el historial"
             : "Toma recuperada",
@@ -306,15 +339,15 @@ export default function App() {
         <AudioLines />
         <h1>AutoTube</h1>
         <p>{error || "Conectando con la mesa de producción…"}</p>
-        <button onClick={() => refresh().catch((e) => setError(String(e)))}>
-          Reintentar
+        <button disabled={busy} onClick={retryConnection}>
+          {busy ? "Conectando…" : "Reintentar"}
         </button>
       </main>
     );
   return (
     <div className="app">
       <header className="console-header">
-        <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
+        <a className="brand" href="#" onClick={(e) => { e.preventDefault(); setPage("studio"); setTab("overview"); }}>
           <span className="brandmark">
             <AudioLines size={24} />
           </span>
@@ -339,10 +372,10 @@ export default function App() {
         </div>
         <nav aria-label="Navegación principal">
           {[
-            ["studio", "Editor", Clapperboard],
+            ["studio", "Estudio", Clapperboard],
             ["calendar", "Publicaciones", CalendarDays],
             ["channels", "Canales", Radio],
-            ["settings", "Motores y cuentas", Settings2],
+            ["settings", "Conexiones", Settings2],
           ].map(([id, label, Icon]) => {
             const I = Icon as typeof Radio;
             return (
@@ -420,8 +453,7 @@ export default function App() {
           <div className="demo-banner">
             <CircleHelp size={15} />
             <span>
-              Demo interactiva · datos locales en este navegador. Para generar
-              voz, renderizar y subir, usa el escritorio.
+              Modo demo · edita e importa tus archivos. La generación y YouTube están en la aplicación local.
             </span>
           </div>
         )}
@@ -437,7 +469,7 @@ export default function App() {
                   ? "Ritmo de publicación"
                   : page === "channels"
                     ? "Identidad y criterio del canal"
-                    : "Motores locales y cuentas"}
+                    : "Tus voces, IA y cuentas"}
             </h1>
           </div>
           <button
@@ -510,6 +542,7 @@ export default function App() {
                     setProject(p);
                     setLanguage("es");
                     setDirty(false);
+                    setTab("overview");
                   }, "Episodio creado")
                 }
               >
@@ -565,12 +598,14 @@ export default function App() {
             {project ? (
               <section className="workspace">
                 <h1 className="sr-only">Editor: {project.title}</h1>
-                <div className="project-heading">
+                <div className="workspace-chrome"><div className="project-heading">
                   <span className="eyebrow">
-                    EPISODIO / REV. {project.revision}{" "}
-                    {dirty ? "· CAMBIOS SIN GUARDAR" : ""}
+                    {dirty ? "EDICIÓN SIN GUARDAR" : "TU EPISODIO · GUARDADO"}
                   </span>
                   <div className="heading-actions">
+                    <details className="episode-options">
+                      <summary>Archivo</summary>
+                      <div>
                     <button
                       className="subtle"
                       disabled={busy}
@@ -605,8 +640,10 @@ export default function App() {
                       }
                     >
                       <Download size={15} />
-                      Exportar
+                      Guardar proyecto ZIP
                     </button>
+                      </div>
+                    </details>
                     <button
                       className="primary"
                       disabled={busy || !dirty}
@@ -625,33 +662,20 @@ export default function App() {
                     onChange={(e) => edit({ title: e.target.value })}
                   />
                 </label>
-                <div
-                  className="tabs"
-                  role="tablist"
-                  aria-label="Edición del episodio"
-                >
-                  {[
-                    ["script", "Guion", FileText],
-                    ["audio", "Voz y tomas", AudioLines],
-                    ["video", "Montaje", Clapperboard],
-                    ["metadata", "Publicación", Upload],
-                    ["brief", "Criterio", SlidersHorizontal],
-                  ].map(([id, text, Icon]) => {
-                    const ToolIcon = Icon as typeof FileText;
-                    return (
-                      <button
-                        role="tab"
-                        aria-selected={tab === id}
-                        key={String(id)}
-                        className={tab === id ? "current" : ""}
-                        onClick={() => setTab(String(id))}
-                      >
-                        <ToolIcon size={16} />
-                        {String(text)}
-                      </button>
-                    );
-                  })}
                 </div>
+                <ProductionFlow
+                  steps={productionSteps(project, language, activeJobs, outputTarget)}
+                  target={outputTarget}
+                  current={tab}
+                  language={language}
+                  languages={project.tracks.map((t) => t.language)}
+                  onTarget={changeOutputTarget}
+                  onStage={setTab}
+                  onLanguage={setLanguage}
+                  onCriterion={() => setTab("brief")}
+                />
+                <div className="tool-surface">
+                {tab === "overview" && <ProductionOverview steps={productionSteps(project, language, activeJobs, outputTarget)} target={outputTarget} onStage={setTab} />}
                 {tab === "video" && (
                   <VideoStage
                     project={project}
@@ -686,6 +710,7 @@ export default function App() {
                       }, "Identidad del canal guardada")
                     }
                     onAudio={() => setTab("audio")}
+                    onDownload={(id) => run(() => downloadAsset(id, `${project.title} · ${language}`), "Vídeo guardado")}
                     onRender={() => production("render_video")}
                     onImport={() =>
                       run(async () => {
@@ -763,7 +788,32 @@ export default function App() {
                   />
                 )}
                 {tab === "metadata" && (
-                  <div className="form-grid">
+                  <section className="publication-workbench"><div className="publication-toolbar"><strong>Publicación en YouTube</strong><div className="publication-imports">                      <button
+                        onClick={() =>
+                          run(async () => {
+                            const a = await importMedia("thumbnail");
+                            if (a) edit({ thumbnail_id: a.id });
+                          }, "Miniatura añadida; guarda el proyecto")
+                        }
+                      >
+                        Elegir miniatura
+                      </button>                      <button
+                        onClick={() =>
+                          run(async () => {
+                            const a = await importMedia("video");
+                            if (a) edit({ video_id: a.id });
+                          }, "Vídeo añadido; guarda el proyecto")
+                        }
+                      >
+                        Importar vídeo
+                      </button></div>                    <button
+                      className="primary"
+                      disabled={busy || !localEngine || !project.video_id}
+                      onClick={() => production("queue_upload")}
+                    >
+                      <Upload size={16} />
+                      Subir como privado
+                    </button></div><div className="form-grid publication-fields">
                     <label className="full">
                       Descripción
                       <textarea
@@ -810,30 +860,12 @@ export default function App() {
                         )}
                       </div>
                       <span>{nameOf(project.thumbnail_id)}</span>
-                      <button
-                        onClick={() =>
-                          run(async () => {
-                            const a = await importMedia("thumbnail");
-                            if (a) edit({ thumbnail_id: a.id });
-                          }, "Miniatura añadida; guarda el proyecto")
-                        }
-                      >
-                        Elegir miniatura
-                      </button>
+
                     </div>
                     <div className="asset-card">
                       <Upload size={24} />
                       <span>{nameOf(project.video_id)}</span>
-                      <button
-                        onClick={() =>
-                          run(async () => {
-                            const a = await importMedia("video");
-                            if (a) edit({ video_id: a.id });
-                          }, "Vídeo añadido; guarda el proyecto")
-                        }
-                      >
-                        Importar vídeo
-                      </button>
+
                     </div>
                     <label className="check">
                       <input
@@ -855,15 +887,8 @@ export default function App() {
                       />
                       Contenido sintético que requiere declaración
                     </label>
-                    <button
-                      className="primary"
-                      disabled={busy || !localEngine || !project.video_id}
-                      onClick={() => production("queue_upload")}
-                    >
-                      <Upload size={16} />
-                      Subir como privado
-                    </button>
-                  </div>
+
+                  </div></section>
                 )}
                 {tab === "brief" && (
                   <div className="brief-panel">
@@ -896,16 +921,51 @@ export default function App() {
                 )}
                 {tab === "audio" && (
                   <section className="audio-desk">
-                    <div className="audio-title">
-                      <div>
-                        <span className="eyebrow">MESA DE AUDIO</span>
-                        <h2>Prepara y revisa tu narración.</h2>
-                      </div>
-                      <span className="audio-format">
-                        {project.tracks.length} pistas /{" "}
-                        {language.toUpperCase()}
-                      </span>
-                    </div>
+                    <div className="audio-title tool-ribbon"><div className="ribbon-group"><span className="ribbon-label">Crear voz</span>                          <div className="button-row">
+                            <button
+                              onClick={() =>
+                                run(
+                                  importTake,
+                                  "Toma importada al historial; escúchala antes de elegirla",
+                                )
+                              }
+                            >
+                              <Upload size={15} />
+                              Importar audio
+                            </button>
+
+                            {
+                              <button
+                                className="primary"
+                                disabled={
+                                  busy ||
+                                  productionPending ||
+                                  !localEngine ||
+                                  !(
+                                    track?.script ||
+                                    (language === project.language
+                                      ? project.script
+                                      : "")
+                                  ).trim()
+                                }
+                                onClick={() => production("generate_voice")}
+                              >
+                                <Mic2 size={15} />
+                                Generar audio completo
+                              </button>
+                            }
+                          </div>                          <button
+                            className="sample-button"
+                            disabled={
+                              busy ||
+                              productionPending ||
+                              !localEngine ||
+                              !effectiveScript.trim()
+                            }
+                            onClick={() => production("generate_voice", true)}
+                          >
+                            Probar voz · muestra corta
+                          </button></div></div>
                     <div className="language-tabs">
                       {project.tracks.map((t) => (
                         <button
@@ -989,7 +1049,7 @@ export default function App() {
                       </div>
                     )}
 
-                    <div className="audio-workbench">
+                    <div className="audio-pane-tabs" aria-label="Panel de audio"><button aria-pressed={audioPane === "text"} onClick={() => setAudioPane("text")}>Guion y voz</button><button aria-pressed={audioPane === "takes"} onClick={() => setAudioPane("takes")}>Escuchar y guardar</button></div><div className="audio-workbench" data-pane={audioPane}>
                       <section className="narration-sheet">
                         <div className="panel-header">
                           <span className="eyebrow">
@@ -1045,7 +1105,9 @@ export default function App() {
                             Leer este guion <ChevronRight size={14} />
                           </button>
                         </div>
-                        <div className="voice-controls">
+                        <details className="voice-controls"><summary>Voz y ajustes</summary><div className="voice-settings-body">
+                          <details className="voice-engine-options">
+                          <summary>Motor y modelo <span>{track?.provider === "elevenlabs" ? "ElevenLabs" : track?.provider === "chatterbox" ? "Chatterbox" : "Qwen · local"}</span></summary>
                           <label>
                             Motor de voz
                             <select
@@ -1100,6 +1162,7 @@ export default function App() {
                                 </small>
                               </label>
                             )}
+                          </details>
                           {(track?.provider === "elevenlabs" ||
                             (track?.provider !== "chatterbox" &&
                               (track?.model || "voice_design") ===
@@ -1121,40 +1184,7 @@ export default function App() {
                               />
                             </label>
                           )}
-                          <div className="button-row">
-                            <button
-                              onClick={() =>
-                                run(
-                                  importTake,
-                                  "Toma importada al historial; escúchala antes de elegirla",
-                                )
-                              }
-                            >
-                              <Upload size={15} />
-                              Importar audio
-                            </button>
 
-                            {
-                              <button
-                                className="primary"
-                                disabled={
-                                  busy ||
-                                  productionPending ||
-                                  !localEngine ||
-                                  !(
-                                    track?.script ||
-                                    (language === project.language
-                                      ? project.script
-                                      : "")
-                                  ).trim()
-                                }
-                                onClick={() => production("generate_voice")}
-                              >
-                                <Mic2 size={15} />
-                                Generar audio completo
-                              </button>
-                            }
-                          </div>
                           <p className="provider-hint">
                             {(track?.model || "voice_design") ===
                             "custom_voice_small"
@@ -1166,18 +1196,7 @@ export default function App() {
                               {latestVoice.error}
                             </p>
                           )}
-                          <button
-                            className="sample-button"
-                            disabled={
-                              busy ||
-                              productionPending ||
-                              !localEngine ||
-                              !effectiveScript.trim()
-                            }
-                            onClick={() => production("generate_voice", true)}
-                          >
-                            Probar voz · muestra corta
-                          </button>
+
                           {!localEngine && (
                             <p className="provider-hint">
                               Abre la aplicación local para generar voz. La demo
@@ -1195,9 +1214,9 @@ export default function App() {
                               Editar criterio
                             </button>
                           </details>
-                        </div>
+                        </div></details>
                       </section>
-                      <section className="recording-console">
+                      <section className={"recording-console " + (track?.audio_id || track?.takes?.length ? "has-recordings" : "") }>
                         <div className="panel-header">
                           <span className="eyebrow">
                             TOMA / {language.toUpperCase()}
@@ -1221,6 +1240,7 @@ export default function App() {
                           script={effectiveScript}
                           busy={busy || productionPending}
                           onAction={takeAction}
+                          onExport={(id) => run(() => downloadAsset(id, `${project.title} · ${language}`), "Audio guardado")}
                         />
                       </section>
                     </div>
@@ -1250,27 +1270,12 @@ export default function App() {
                           </label>
                         </div>
                       </details>
-                      <div className="render-footer">
-                        <div>
-                          <span className="eyebrow">SIGUIENTE / VÍDEO</span>
-                          <p>
-                            {track?.audio_id
-                              ? "Toma elegida. Prepara el tema y el montaje."
-                              : "Escucha las tomas y elige una completa."}
-                          </p>
-                          <span>
-                            La generación no elige una toma automáticamente.
-                          </span>
-                        </div>
-                        <button onClick={() => setTab("video")}>
-                          Preparar vídeo <ChevronRight size={15} />
-                        </button>
-                      </div>
                     </div>
                   </section>
                 )}
+                </div>
                 {activeJobs.length > 0 && (
-                  <details className="jobs" open={productionPending}>
+                  <details className="jobs">
                     <summary>
                       Actividad del episodio{" "}
                       <span>{activeJobs.length} trabajos</span>
@@ -1417,6 +1422,7 @@ export default function App() {
                 Un episodio al día
               </button>
             </div>
+            <div className="calendar-content">
             <div className="schedule-list">
               {projects.map((p) => (
                 <label className="schedule-item" key={p.id}>
@@ -1466,10 +1472,11 @@ export default function App() {
                 <p>El calendario está vacío. La demo nunca publica vídeos.</p>
               )}
             </div>
+            </div>
           </section>
         )}
         {page === "channels" && (
-          <section className="settings-page">
+          <section className="channels-workbench">
             <div className="section-title">
               <p>Los proyectos heredan este criterio y pueden afinarlo.</p>
               <button
@@ -1518,8 +1525,20 @@ export default function App() {
           </section>
         )}
         {page === "settings" && (
-          <section className="settings-page">
-            <div className="connection-card">
+          <section className="settings-workbench"><div className="connections-toolbar"><nav aria-label="Herramientas de conexión">{[["voice", "Voces e IA"], ["youtube", "YouTube"], ["mcp", "MCP"]].map(([id, label]) => <button key={id} aria-pressed={connectionTool === id} onClick={() => setConnectionTool(id)}>{label}</button>)}</nav>              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await command("settings", settings);
+                    setSettings({ ...settings, elevenlabs_key: "" });
+                  }, "Conexiones guardadas")
+                }
+              >
+                <Save size={16} />
+                Guardar conexiones
+              </button></div><div className="connections-content">
+            <div className="connection-card" hidden={connectionTool !== "youtube"}>
               <div>
                 <Radio />
                 <h2>YouTube · {channel?.name}</h2>
@@ -1563,7 +1582,7 @@ export default function App() {
                 Revisar inventario remoto
               </button>
             </div>
-            <div className="connection-card">
+            <div className="connection-card" hidden={connectionTool !== "voice"}>
               <div>
                 <Mic2 />
                 <h2>Voces y entorno local</h2>
@@ -1651,21 +1670,9 @@ export default function App() {
                 generación local usa únicamente los pesos descargados. CPU es
                 más lenta; CUDA aprovecha la GPU.
               </p>
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    await command("settings", settings);
-                    setSettings({ ...settings, elevenlabs_key: "" });
-                  }, "Conexiones guardadas")
-                }
-              >
-                <Save size={16} />
-                Guardar conexiones
-              </button>
+
             </div>
-            <div className="connection-card">
+            <div className="connection-card" hidden={connectionTool !== "mcp"}>
               <div>
                 <Layers3 />
                 <h2>MCP de escritorio</h2>
@@ -1681,7 +1688,7 @@ export default function App() {
                 conector o una implantación autenticada específica.
               </p>
             </div>
-          </section>
+          </div></section>
         )}
       </main>
     </div>
@@ -1710,6 +1717,10 @@ function ChannelForm({
       }}
       className="channel-form"
     >
+      <div className="channel-toolbar"><strong>Identidad y criterio</strong>      <button className="primary" type="submit" disabled={busy}>
+        <Save size={16} />
+        Guardar canal
+      </button></div><div className="channel-fields">
       <div className="form-grid">
         <label>
           Nombre del canal
@@ -1794,10 +1805,8 @@ function ChannelForm({
           />
         </label>
       ))}
-      <button className="primary" type="submit">
-        <Save size={16} />
-        Guardar canal
-      </button>
+
+      </div>
     </form>
   );
 }

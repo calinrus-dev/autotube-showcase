@@ -55,6 +55,7 @@ export default function VideoStage({
   onRender,
   onImport,
   onAudio,
+  onDownload,
 }: {
   project: Project;
   track: Track | undefined;
@@ -68,6 +69,7 @@ export default function VideoStage({
   onRender: () => void;
   onImport: () => void;
   onAudio: () => void;
+  onDownload: (id: string) => void;
 }) {
   const theme = { ...defaultTheme, ...project.video_theme };
   const branding = channel?.branding || { intro_id: "", outro_id: "" };
@@ -254,6 +256,8 @@ export default function VideoStage({
             {track?.language.toUpperCase()}
           </span>
         </div>
+        <div className="button-row">
+        {videoId && <button disabled={busy} onClick={() => onDownload(videoId)}><Download size={15} /> Guardar vídeo</button>}
         <button
           className="primary"
           disabled={
@@ -266,8 +270,9 @@ export default function VideoStage({
           onClick={onRender}
         >
           <Download size={15} />
-          {rendering !== undefined ? "Exportando…" : "Exportar vídeo"}
+          {rendering !== undefined ? "Montando…" : videoId ? "Volver a montar" : "Crear vídeo"}
         </button>
+        </div>
       </div>
       <div className="editor-grid">
         <nav className="editor-tools" aria-label="Herramientas de vídeo">

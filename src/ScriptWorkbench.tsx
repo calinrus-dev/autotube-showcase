@@ -126,16 +126,7 @@ export default function ScriptWorkbench({
             Leer
           </button>
         </div>
-        <label className="compact-label">
-          Idioma
-          <select value={language} onChange={(e) => onLanguage(e.target.value)}>
-            {project.tracks.map((t) => (
-              <option value={t.language} key={t.language}>
-                {t.language.toUpperCase()}
-              </option>
-            ))}
-          </select>
-        </label>
+        <span className="writing-language">{language.toUpperCase()}</span>
         <span className="writing-stats">
           {words} palabras · {Math.ceil(words / 145)} min aprox.
         </span>
@@ -296,13 +287,7 @@ export default function ScriptWorkbench({
                     {job.result.fragments || 0} fragmentos recibidos · límite{" "}
                     {job.result.max_tokens || budget}
                   </span>
-                  <button
-                    disabled={job.result.cancel_requested}
-                    onClick={() => onStop(job.id)}
-                  >
-                    <Square size={12} />
-                    {job.result.cancel_requested ? "Deteniendo…" : "Detener"}
-                  </button>
+
                 </div>
               )}
               <label>
@@ -329,8 +314,11 @@ export default function ScriptWorkbench({
                     <option value="outline">Preparar esquema</option>
                   </select>
                 </label>
+              </div>
+              <details className="assistant-options">
+                <summary>Modelo y extensión</summary>
                 <label>
-                  Límite
+                  Extensión máxima
                   <select
                     value={budget}
                     disabled={busy}
@@ -341,7 +329,6 @@ export default function ScriptWorkbench({
                     <option value={3200}>3200 tokens</option>
                   </select>
                 </label>
-              </div>
               <label>
                 Modelo de texto
                 <select
@@ -360,18 +347,8 @@ export default function ScriptWorkbench({
                   )}
                 </select>
               </label>
-              <button
-                className="primary"
-                disabled={busy || !localEngine || !model || !prompt.trim()}
-                onClick={() => {
-                  setFocus("");
-                  setPreviewLive(true);
-                  onGenerate({ prompt, mode, model, max_tokens: budget });
-                }}
-              >
-                <Sparkles size={15} />
-                Generar propuesta
-              </button>
+              </details>
+
               {!models.length && (
                 <p className="tool-help">
                   Prepara Ollama y un modelo local desde la documentación de
@@ -469,6 +446,24 @@ export default function ScriptWorkbench({
               )}
             </div>
           )}
+          {assistantTab === "generate" && <div className="assistant-actions">{job ? (                  <button
+                    disabled={job.result.cancel_requested}
+                    onClick={() => onStop(job.id)}
+                  >
+                    <Square size={12} />
+                    {job.result.cancel_requested ? "Deteniendo…" : "Detener"}
+                  </button>) : (              <button
+                className="primary"
+                disabled={busy || !localEngine || !model || !prompt.trim()}
+                onClick={() => {
+                  setFocus("");
+                  setPreviewLive(true);
+                  onGenerate({ prompt, mode, model, max_tokens: budget });
+                }}
+              >
+                <Sparkles size={15} />
+                Generar propuesta
+              </button>)}</div>}
         </aside>
       </div>
     </section>

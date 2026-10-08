@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AudioLines, Check, RotateCcw, X, LoaderCircle } from "lucide-react";
+import { AudioLines, Check, Download, RotateCcw, X, LoaderCircle } from "lucide-react";
 import { mediaPreview } from "./bridge";
 import type { AudioTake, Track, Job } from "./types";
 export function trackTakes(
@@ -34,20 +34,22 @@ export default function TakeReview({
   script,
   busy,
   onAction,
+  onExport,
 }: {
   track: Track | undefined;
   generation?: Job;
   script: string;
   busy: boolean;
   onAction: (id: string, action: string) => void;
+  onExport: (id: string) => void;
 }) {
   const takes = trackTakes(track, script);
-  const [focus, setFocus] = useState("");
+  const [focus, setFocus] = useState(track?.audio_id || "");
   const [filter, setFilter] = useState("all");
   const [showDiscarded, setShowDiscarded] = useState(false);
   const [source, setSource] = useState("");
   const [error, setError] = useState("");
-  const [previousLast, setPreviousLast] = useState("");
+  const [previousLast, setPreviousLast] = useState(() => takes.filter((t) => t.status === "ready").at(-1)?.id || "");
   const ready = takes.filter((t) => t.status === "ready");
   const latest = ready.at(-1)?.id || "";
   useEffect(() => {
@@ -190,10 +192,13 @@ export default function TakeReview({
                 >
                   <Check size={14} />
                   {take.id === track?.audio_id
-                    ? "Elegida para vídeo"
+                    ? "Toma elegida"
                     : "Usar esta toma"}
                 </button>
               )}
+              <button disabled={busy || take.status === "discarded" || !source} onClick={() => onExport(take.id)}>
+                <Download size={14} /> {take.sample ? "Guardar muestra" : "Guardar audio"}
+              </button>
               <button
                 disabled={busy}
                 onClick={() =>
@@ -237,7 +242,7 @@ export default function TakeReview({
           </>
         )}
       </div>
-      <section className="take-library" aria-label="Historial de tomas">
+      {!!takes.length && <section className="take-library" aria-label="Historial de tomas">
         <div className="take-library-heading">
           <strong>
             Tomas de esta pista <span>{ready.length}</span>
@@ -251,7 +256,7 @@ export default function TakeReview({
             Ver descartadas
           </label>
         </div>
-        <div className="take-tabs" aria-label="Filtrar tomas">
+        {takes.length > 1 && <div className="take-tabs" aria-label="Filtrar tomas">
           {[
             ["all", "Todas"],
             ["sample", "Muestras"],
@@ -275,7 +280,7 @@ export default function TakeReview({
               </small>
             </button>
           ))}
-        </div>
+        </div>}
         <div className="take-list">
           {visibleTakes.map((t) => (
             <button
@@ -332,7 +337,7 @@ export default function TakeReview({
         {!!takes.length && (
           <p>Descartar conserva el archivo. Puedes recuperarlo aquí.</p>
         )}
-      </section>
+      </section>}
     </div>
   );
 }
